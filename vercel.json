@@ -1,5 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": null,
+  "outputDirectory": ".",
   "rewrites": [
     { "source": "/api/recording/stream", "destination": "/api/recording?stream=1" }
   ]
