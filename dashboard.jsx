@@ -35,38 +35,48 @@ const DashboardCaller = ({ onNav, onCall, onOpenLead }) => {
       </div>
 
       {/* Call next hero */}
-      <div className="card card-lg" style={{padding:'24px',marginBottom:20,background:'linear-gradient(135deg, var(--surface), var(--surface-2))',borderColor:'var(--border)'}}>
-        <div className="hstack gap-4" style={{alignItems:'flex-start'}}>
-          <div style={{width:56,height:56,borderRadius:12,background:'var(--accent)',color:'white',display:'grid',placeItems:'center',fontWeight:600,fontSize:20,flexShrink:0}}>
-            {nowLead.initials}
-          </div>
-          <div style={{flex:1,minWidth:0}}>
-            <div className="hstack gap-2" style={{marginBottom:6}}>
-              <span className="subtle" style={{fontSize:11,textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:500}}>Call next</span>
-              <StagePill stageId={nowLead.stage}/>
-              <span className="badge" style={{color:'var(--amber)'}}>
-                <Icon name="clock" size={11}/> Due today
-              </span>
+      {nowLead ? (
+        <div className="card card-lg" style={{padding:'24px',marginBottom:20,background:'linear-gradient(135deg, var(--surface), var(--surface-2))',borderColor:'var(--border)'}}>
+          <div className="hstack gap-4" style={{alignItems:'flex-start'}}>
+            <div style={{width:56,height:56,borderRadius:12,background:'var(--accent)',color:'white',display:'grid',placeItems:'center',fontWeight:600,fontSize:20,flexShrink:0}}>
+              {nowLead.initials}
             </div>
-            <div style={{fontSize:22,fontWeight:600,letterSpacing:'-0.02em'}}>{nowLead.fullName}</div>
-            <div className="muted" style={{fontSize:13,marginTop:2}}>{nowLead.business} · {nowLead.location}</div>
-            <div className="hstack gap-4" style={{marginTop:10,fontSize:12}}>
-              <span className="muted hstack gap-1"><Icon name="phone" size={12}/> <span className="mono">{nowLead.phone}</span></span>
-              <span className="muted hstack gap-1"><Icon name="history" size={12}/> Last called 2 days ago</span>
-              <span className="muted hstack gap-1"><Icon name="note" size={12}/> 3 notes</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div className="hstack gap-2" style={{marginBottom:6}}>
+                <span className="subtle" style={{fontSize:11,textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:500}}>Call next</span>
+                <StagePill stageId={nowLead.stage}/>
+                <span className="badge" style={{color:'var(--amber)'}}>
+                  <Icon name="clock" size={11}/> Due today
+                </span>
+              </div>
+              <div style={{fontSize:22,fontWeight:600,letterSpacing:'-0.02em'}}>{nowLead.fullName}</div>
+              <div className="muted" style={{fontSize:13,marginTop:2}}>{nowLead.business} · {nowLead.location}</div>
+              <div className="hstack gap-4" style={{marginTop:10,fontSize:12}}>
+                <span className="muted hstack gap-1"><Icon name="phone" size={12}/> <span className="mono">{nowLead.phone}</span></span>
+                <span className="muted hstack gap-1"><Icon name="history" size={12}/> Last called 2 days ago</span>
+                <span className="muted hstack gap-1"><Icon name="note" size={12}/> 3 notes</span>
+              </div>
             </div>
-          </div>
-          <div className="hstack gap-2">
-            <button className="btn" onClick={() => onOpenLead(nowLead.id)}>
-              View lead <span className="kbd">⏎</span>
-            </button>
-            <button className="btn btn-primary" onClick={() => onCall(nowLead)} style={{padding:'8px 14px'}}>
-              <Icon name="phone_call" size={14}/>
-              Call now <span className="kbd">C</span>
-            </button>
+            <div className="hstack gap-2">
+              <button className="btn" onClick={() => onOpenLead(nowLead.id)}>
+                View lead <span className="kbd">⏎</span>
+              </button>
+              <button className="btn btn-primary" onClick={() => onCall(nowLead)} style={{padding:'8px 14px'}}>
+                <Icon name="phone_call" size={14}/>
+                Call now <span className="kbd">C</span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="card card-lg" style={{padding:'24px',marginBottom:20,textAlign:'center'}}>
+          <div style={{fontSize:14,fontWeight:600}}>No leads yet</div>
+          <div className="subtle" style={{fontSize:12,marginTop:6}}>Import a CSV or click “New lead” (top-right) to start calling.</div>
+          <button className="btn btn-primary" style={{marginTop:14}} onClick={() => onNav('leads')}>
+            <Icon name="plus" size={13}/> Add your first lead
+          </button>
+        </div>
+      )}
 
       {/* 3 stat cards */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:12,marginBottom:24}}>
