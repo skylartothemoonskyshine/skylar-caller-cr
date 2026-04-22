@@ -415,12 +415,23 @@ function Root() {
 
   React.useEffect(() => {
     let cancelled = false;
+    // Only bootstrap on a real identity change. Supabase also fires on
+    // TOKEN_REFRESHED (tab focus, ~1hr refreshes) — if we re-bootstrapped
+    // on those, the user would see a "Loading pipeline…" splash every
+    // time they came back to the tab.
+    let lastBootedUserId = null;
     const sub = store.onAuthChange(async (user) => {
       if (cancelled) return;
       if (!user) {
+        lastBootedUserId = null;
         setPhase('login');
         return;
       }
+      if (lastBootedUserId === user.id) {
+        // Token refresh for the same user — nothing to re-hydrate.
+        return;
+      }
+      lastBootedUserId = user.id;
       setPhase('bootstrapping');
       try {
         await store.bootstrap(user);
