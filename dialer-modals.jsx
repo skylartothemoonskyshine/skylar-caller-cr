@@ -383,7 +383,6 @@ const QuickLogModal = ({ lead, defaultDuration = '2:30', callSid = null, onClose
   const [followup, setFollowup] = React.useState('3d');
   const [stage, setStage] = React.useState(STAGE_FOR_DISPOSITION['Connected']);
   const [stageTouched, setStageTouched] = React.useState(false);
-  const [advance, setAdvance] = React.useState(true);
 
   const pickDisposition = (id) => {
     setDisposition(id);
@@ -424,7 +423,7 @@ const QuickLogModal = ({ lead, defaultDuration = '2:30', callSid = null, onClose
       due.setHours(10, 0, 0, 0);
       store.setTask(lead.id, due, 'Call follow-up');
     }
-    if (onSaved) onSaved({ advance });
+    if (onSaved) onSaved({ advance: false });
     else onClose();
   };
 
@@ -500,13 +499,9 @@ const QuickLogModal = ({ lead, defaultDuration = '2:30', callSid = null, onClose
           </div>
         </div>
         <div className="modal-footer">
-          <label className="hstack gap-2 subtle" style={{marginRight:'auto',fontSize:12,cursor:'pointer'}}>
-            <input type="checkbox" checked={advance} onChange={e => setAdvance(e.target.checked)}/>
-            <span>Go to next lead after saving</span>
-          </label>
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={save}>
-            Save & next <span className="kbd">⌘⏎</span>
+            Save <span className="kbd">⌘⏎</span>
           </button>
         </div>
       </div>
