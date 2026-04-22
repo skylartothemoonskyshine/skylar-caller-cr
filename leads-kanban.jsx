@@ -98,6 +98,11 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
                   <td onClick={e => e.stopPropagation()}>
                     <div className="hstack gap-1">
                       <button className="btn btn-sm" onClick={() => onCall(l)} title="Call"><Icon name="phone" size={12}/></button>
+                      {l.website && (
+                        <a className="btn btn-sm" href={safeUrl(l.website)} target="_blank" rel="noreferrer" title={`Open ${displayUrl(l.website)}`} onClick={e => e.stopPropagation()}>
+                          <Icon name="globe" size={12}/>
+                        </a>
+                      )}
                       <ActionsMenu actions={[
                         { icon: 'sliders', label: 'Edit',         onClick: () => onEdit && onEdit(l) },
                         { icon: 'message', label: 'Send SMS',     onClick: () => onSMS && onSMS(l) },
