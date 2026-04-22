@@ -366,12 +366,29 @@ const SMSModal = ({ lead, onClose, onSent }) => {
 };
 
 const QuickLogModal = ({ lead, defaultDuration = '2:30', callSid = null, onClose, onSaved }) => {
+  // Mapping: disposition → sensible next stage. Only auto-advances if the
+  // user hasn't already manually changed the stage dropdown.
+  const STAGE_FOR_DISPOSITION = {
+    'Connected':      'contacted',
+    'No answer':      'attempted',
+    'Voicemail':      'attempted',
+    'Gatekeeper':     'attempted',
+    'Wrong number':   'lost',
+    'Not interested': 'lost',
+  };
+
   const [disposition, setDisposition] = React.useState('Connected');
   const [outcome, setOutcome] = React.useState('');
   const [note, setNote] = React.useState('');
   const [followup, setFollowup] = React.useState('3d');
-  const [stage, setStage] = React.useState(lead.stage);
+  const [stage, setStage] = React.useState(STAGE_FOR_DISPOSITION['Connected']);
+  const [stageTouched, setStageTouched] = React.useState(false);
   const [advance, setAdvance] = React.useState(true);
+
+  const pickDisposition = (id) => {
+    setDisposition(id);
+    if (!stageTouched) setStage(STAGE_FOR_DISPOSITION[id] || lead.stage);
+  };
 
   const dispositions = [
     { id: 'Connected', color: 'var(--green)', icon: 'phone_call' },
@@ -430,7 +447,7 @@ const QuickLogModal = ({ lead, defaultDuration = '2:30', callSid = null, onClose
             <div className="tweak-label">Disposition</div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(3, 1fr)',gap:6}}>
               {dispositions.map(d => (
-                <button key={d.id} className="btn btn-sm" onClick={() => setDisposition(d.id)}
+                <button key={d.id} className="btn btn-sm" onClick={() => pickDisposition(d.id)}
                   style={{
                     justifyContent:'flex-start',
                     borderColor: disposition === d.id ? d.color : 'var(--border)',
@@ -461,7 +478,7 @@ const QuickLogModal = ({ lead, defaultDuration = '2:30', callSid = null, onClose
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
             <div className="tweak-row">
               <div className="tweak-label">Move to stage</div>
-              <select className="input" value={stage} onChange={e => setStage(e.target.value)}>
+              <select className="input" value={stage} onChange={e => { setStage(e.target.value); setStageTouched(true); }}>
                 {STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
               </select>
             </div>

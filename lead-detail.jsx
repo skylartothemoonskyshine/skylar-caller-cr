@@ -35,7 +35,6 @@ const LeadDetailA = ({ lead, onCall, onBack, onQuickLog, onSMS, onEdit }) => {
         </button>
         <span className="subtle">/</span>
         <span style={{fontSize:13,fontWeight:500}}>{lead.fullName}</span>
-        <span className="subtle mono" style={{fontSize:11}}>{lead.id}</span>
         <div style={{marginLeft:'auto'}} className="hstack gap-2">
           <button className="btn" onClick={onEdit}><Icon name="sliders" size={13}/> Edit</button>
           <a className="btn" href={lead.email ? `mailto:${lead.email}` : '#'}><Icon name="mail" size={13}/> Email</a>
@@ -62,6 +61,11 @@ const LeadDetailA = ({ lead, onCall, onBack, onQuickLog, onSMS, onEdit }) => {
           <div className="hstack gap-2" style={{marginBottom:4}}>
             <h1 style={{fontSize:26}}>{lead.fullName}</h1>
             <StagePill stageId={lead.stage}/>
+            {callHistory[0] && (
+              <span className="badge" style={{fontSize:11}}>
+                Last call: {callHistory[0].disposition} · {relativeString(callHistory[0].at)}
+              </span>
+            )}
           </div>
           <div className="muted" style={{fontSize:14}}>{lead.business}{lead.niche ? ` · ${lead.niche}` : ''}{lead.location ? ` · ${lead.location}` : ''}</div>
           <div className="hstack gap-4" style={{marginTop:10,fontSize:12.5}}>
