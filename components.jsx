@@ -239,6 +239,8 @@ const Toast = ({ message, onClose }) => {
 // Lead form modal — handles both New and Edit. Pass `lead` to switch to edit mode.
 const LeadFormModal = ({ lead = null, onClose, onCreated, onUpdated }) => {
   const isEdit = !!lead;
+  const canAssign = store.isOwner(); // only admin picks; workers auto-own what they create
+  const defaultOwner = lead?.ownerId || store.effectiveMe();
   const [form, setForm] = React.useState(() => ({
     fullName: lead?.fullName || '',
     business: lead?.business || '',
@@ -249,6 +251,7 @@ const LeadFormModal = ({ lead = null, onClose, onCreated, onUpdated }) => {
     location: lead?.location || '',
     source:   lead?.source   || 'Manual',
     stage:    lead?.stage    || 'new',
+    ownerId:  defaultOwner,
   }));
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const canSubmit = form.fullName.trim() && form.phone.trim();
@@ -257,11 +260,18 @@ const LeadFormModal = ({ lead = null, onClose, onCreated, onUpdated }) => {
 
   const submit = () => {
     if (!canSubmit) return;
+    const ownerRep = REP_OF[form.ownerId];
+    const withOwner = {
+      ...form,
+      ownerId: form.ownerId,
+      ownerName: ownerRep?.name || '',
+      ownerInitials: ownerRep?.initials || '',
+    };
     if (isEdit) {
-      store.updateLead(lead.id, form);
+      store.updateLead(lead.id, withOwner);
       onUpdated && onUpdated(lead.id);
     } else {
-      const created = store.addLead(form);
+      const created = store.addLead(withOwner);
       onCreated && onCreated(created);
     }
     onClose();
@@ -328,6 +338,14 @@ const LeadFormModal = ({ lead = null, onClose, onCreated, onUpdated }) => {
                 <div className="tweak-label">Stage</div>
                 <select className="input" value={form.stage} onChange={e => set('stage', e.target.value)}>
                   {STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
+              </div>
+            )}
+            {canAssign && (
+              <div className="tweak-row" style={{gridColumn: isEdit ? 'auto' : '1 / -1'}}>
+                <div className="tweak-label">Assign to</div>
+                <select className="input" value={form.ownerId || ''} onChange={e => set('ownerId', e.target.value)}>
+                  {REPS.map(r => <option key={r.id} value={r.id}>{r.name}{r.role === 'owner' ? ' (you)' : ''}</option>)}
                 </select>
               </div>
             )}

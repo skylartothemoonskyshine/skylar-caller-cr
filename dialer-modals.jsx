@@ -512,7 +512,7 @@ const CommandPalette = ({ onClose, onNav, onOpenLead }) => {
     { id: 'nav-tasks', label: 'Go to Tasks', icon: 'check_square', action: () => onNav('tasks') },
     { id: 'nav-calls', label: 'Go to Call logs', icon: 'history', action: () => onNav('calls') },
   ];
-  const leadResults = LEADS.filter(l => !q || l.fullName.toLowerCase().includes(q.toLowerCase()) || (l.business || '').toLowerCase().includes(q.toLowerCase())).slice(0, 6);
+  const leadResults = store.visibleLeads().filter(l => !q || l.fullName.toLowerCase().includes(q.toLowerCase()) || (l.business || '').toLowerCase().includes(q.toLowerCase())).slice(0, 6);
   const cmdResults = commands.filter(c => !q || c.label.toLowerCase().includes(q.toLowerCase()));
 
   return (

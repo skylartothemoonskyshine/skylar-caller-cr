@@ -421,6 +421,14 @@ const store = {
     this.dirty();
   },
 
+  // Leads visible to the CURRENT view: owner (not viewing-as) sees all;
+  // workers — and owner while viewing-as — see only leads assigned to them.
+  visibleLeads() {
+    if (this.isOwner() && !this.viewingAs) return this.leads;
+    const scope = this.effectiveMe();
+    return this.leads.filter(l => l.ownerId === scope);
+  },
+
   addLead(lead) {
     const rep = this.currentRep();
     const id = crypto.randomUUID();

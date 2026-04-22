@@ -32,7 +32,7 @@ const PhonePage = ({ onCall, onSMS, onOpenLead }) => {
   // Ad-hoc ids are stable per normalized phone so repeated dials share SMS history.
   const resolveTarget = () => {
     const normalized = normalizePhone(dial);
-    const match = LEADS.find(l => normalizePhone(l.phone) === normalized);
+    const match = store.visibleLeads().find(l => normalizePhone(l.phone) === normalized);
     if (match) return match;
     return {
       id: `adhoc-${normalized || dial}`,

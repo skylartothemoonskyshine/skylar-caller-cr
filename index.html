@@ -161,7 +161,7 @@ function App() {
   const startCall = (l) => setCallingLead(l);
   const advanceToNext = () => {
     // pick the next callable lead in the queue
-    const queue = LEADS.filter(l => ['new','attempted','followup','contacted','interested'].includes(l.stage));
+    const queue = store.visibleLeads().filter(l => ['new','attempted','followup','contacted','interested'].includes(l.stage));
     const idx = queue.findIndex(l => l.id === callingLead?.id);
     const next = queue[idx + 1] || queue[0];
     if (next && next.id !== callingLead?.id) {
@@ -170,12 +170,13 @@ function App() {
     }
   };
 
+  const myLeads = store.visibleLeads();
   const counts = {
-    leads: LEADS.length,
+    leads: myLeads.length,
     tasks: TASKS.filter(t => !t.done).length,
     dueToday: TASKS.filter(t => !t.done && isToday(t.due)).length,
-    newLeads: LEADS.filter(l => l.stage === 'new').length,
-    followups: LEADS.filter(l => l.stage === 'followup').length,
+    newLeads: myLeads.filter(l => l.stage === 'new').length,
+    followups: myLeads.filter(l => l.stage === 'followup').length,
   };
 
   const crumbs = {

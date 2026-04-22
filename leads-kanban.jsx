@@ -5,7 +5,8 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
   const [view, setView] = React.useState(localStorage.getItem('leadsView') || 'table');
   React.useEffect(() => { localStorage.setItem('leadsView', view); }, [view]);
 
-  const filtered = LEADS.filter(l => {
+  const scoped = store.visibleLeads();
+  const filtered = scoped.filter(l => {
     if (filter === 'all') return true;
     if (filter === 'mine') return l.ownerId === store.effectiveMe();
     if (filter === 'active') return !['won','lost'].includes(l.stage);
@@ -20,7 +21,7 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
       <div className="page-header">
         <div>
           <div className="page-header-title">Leads</div>
-          <div className="page-header-sub">{filtered.length} of {LEADS.length} leads</div>
+          <div className="page-header-sub">{filtered.length} of {scoped.length} leads</div>
         </div>
         <div className="hstack gap-2">
           <div className="seg">
@@ -31,7 +32,7 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
       </div>
 
       <div className="hstack gap-2" style={{marginBottom:14,flexWrap:'wrap'}}>
-        {[['all','All',LEADS.length],['mine','Assigned to me',LEADS.filter(l=>l.ownerId===store.effectiveMe()).length],['active','Active',LEADS.filter(l=>!['won','lost'].includes(l.stage)).length],['today','Due today',LEADS.filter(l=>l.nextFollowupAt&&isToday(l.nextFollowupAt)).length]].map(([id,label,count])=>(
+        {[['all','All',scoped.length],['mine','Assigned to me',scoped.filter(l=>l.ownerId===store.effectiveMe()).length],['active','Active',scoped.filter(l=>!['won','lost'].includes(l.stage)).length],['today','Due today',scoped.filter(l=>l.nextFollowupAt&&isToday(l.nextFollowupAt)).length]].map(([id,label,count])=>(
             <button key={id} className="btn btn-sm" style={{borderColor: filter===id?'var(--text)':'var(--border)',background: filter===id?'var(--surface-2)':'var(--surface)'}} onClick={()=>setFilter(id)}>
               {label} <span className="subtle mono" style={{marginLeft:4}}>{count}</span>
             </button>
@@ -123,7 +124,7 @@ const KanbanBoard = ({ onOpenLead, onCall, view, setView, filter, setFilter }) =
   const [overStage, setOverStage] = React.useState(null);
 
   const leadsByStage = Object.fromEntries(STAGES.map(s => [s.id, []]));
-  LEADS.forEach(l => { if (leadsByStage[l.stage]) leadsByStage[l.stage].push(l); });
+  store.visibleLeads().forEach(l => { if (leadsByStage[l.stage]) leadsByStage[l.stage].push(l); });
 
   return (
     <div className="page" style={{maxWidth:'none',paddingRight:20,paddingLeft:20}}>

@@ -13,7 +13,7 @@ const StatCard = ({ label, value, sub, tone, icon }) => (
 
 // Variation A — Caller Cockpit (single-minded: who to call next)
 const DashboardCaller = ({ onNav, onCall, onOpenLead }) => {
-  const queue = LEADS
+  const queue = store.visibleLeads()
     .filter(l => ['new','attempted','followup','contacted','interested'].includes(l.stage))
     .slice(0, 8);
   const dueToday = TASKS.filter(t => !t.done && isToday(t.due)).slice(0, 6);
