@@ -17,6 +17,7 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@twilio/voice-sdk@2.11.3/dist/twilio.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 
 <script src="data.js"></script>
 <script type="text/babel" src="components.jsx"></script>
@@ -75,11 +76,12 @@ function App() {
   const [toast, setToast] = React.useState(null);
   const [tweaks, setTweaks] = React.useState(loadTweaks);
   const [me, setMe] = React.useState(() => store.me);
+  const [viewingAs, setViewingAs] = React.useState(() => store.viewingAs);
   const [version, setVersion] = React.useState(0); // bump on every store write to re-render
 
   // Re-render on store changes
   React.useEffect(() => {
-    const handler = () => { setVersion(v => v + 1); setMe(store.me); };
+    const handler = () => { setVersion(v => v + 1); setMe(store.me); setViewingAs(store.viewingAs); };
     window.addEventListener('skylar-change', handler);
     return () => window.removeEventListener('skylar-change', handler);
   }, []);
@@ -190,10 +192,8 @@ function App() {
 
   const navFor = { lead: 'leads', tasks: 'tasks', calendar: 'calendar', calls: 'calls', pipeline: 'pipeline', leads: 'leads', dashboard: 'dashboard', phone: 'phone', settings: 'settings' };
 
-  const switchMe = () => {
-    const next = store.me === 'u1' ? 'u2' : 'u1';
-    store.setMe(next);
-    setToast(`Switched to ${REP_OF[next].name} (${REP_OF[next].role})`);
+  const signOut = () => {
+    if (confirm('Sign out?')) store.signOut();
   };
 
   const onImport = () => {
@@ -216,16 +216,28 @@ function App() {
     input.click();
   };
 
-  // Manager view uses DashboardManager; caller view uses DashboardCaller.
-  const isManager = me === 'u2';
+  // Owner gets the manager overview when NOT viewing-as; while viewing-as (or for
+  // regular callers) we show the caller cockpit — that's the "worker's POV".
+  const isOwner = store.isOwner();
+  const showManagerDash = isOwner && !viewingAs;
+  const viewedRep = viewingAs ? REP_OF[viewingAs] : null;
 
   // safety: the stored leadId might no longer exist (e.g., after CSV import)
   const activeLead = leadId && LEAD_OF[leadId] ? LEAD_OF[leadId] : null;
 
   return (
     <div className="app">
-      <Sidebar current={navFor[route]} onNav={goTo} counts={counts} me={me} onSwitchMe={switchMe}/>
+      <Sidebar
+        current={navFor[route]}
+        onNav={goTo}
+        counts={counts}
+        me={me}
+        viewingAs={viewingAs}
+        onSignOut={signOut}
+        onSetViewingAs={(id) => store.setViewingAs(id)}
+      />
       <div className="main">
+        {viewingAs && <ViewingAsBanner rep={viewedRep} onReturn={() => store.clearViewingAs()}/>}
         <TopBar
           crumb={crumbs[route] || []}
           onNewLead={() => setShowNewLead(true)}
@@ -242,7 +254,7 @@ function App() {
               </button>
             </>
           }/>
-        {route === 'dashboard' && (isManager
+        {route === 'dashboard' && (showManagerDash
           ? <DashboardManager onNav={goTo} onOpenLead={openLead}/>
           : <DashboardCaller onNav={goTo} onCall={startCall} onOpenLead={openLead}/>)}
         {route === 'phone' && <PhonePage onCall={startCall} onSMS={(l) => setSmsLead(l)} onOpenLead={(id) => id === '_calls' ? setRoute('calls') : openLead(id)}/>}
@@ -277,7 +289,7 @@ function App() {
       {smsLead && <SMSModal lead={smsLead} onClose={() => setSmsLead(null)} onSent={() => setToast('SMS sent')}/>}
       <Toast message={toast} onClose={() => setToast(null)}/>
 
-      {showTweaks && <TweaksPanel tweaks={tweaks} onChange={updateTweak} onClose={() => setShowTweaks(false)} onReset={() => { store.resetDemo(); setToast('Demo data reset'); }}/>}
+      {showTweaks && <TweaksPanel tweaks={tweaks} onChange={updateTweak} onClose={() => setShowTweaks(false)}/>}
     </div>
   );
 }
@@ -337,15 +349,99 @@ const TweaksPanel = ({ tweaks, onChange, onClose, onReset }) => (
       <div className="tweak-row">
         <div className="tweak-label">Data</div>
         <div className="hstack gap-2">
-          <button className="btn btn-sm" onClick={onReset}>Reset demo data</button>
-          <button className="btn btn-sm" onClick={() => { if (confirm('Wipe all leads, calls, tasks, notes, SMS?')) store.clearAll(); }}>Clear all</button>
+          <button className="btn btn-sm" onClick={() => { if (confirm('Wipe all leads, calls, tasks, notes, SMS for the entire team?')) store.clearAll(); }}>Clear all</button>
         </div>
       </div>
     </div>
   </div>
 );
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+// --- Auth gate ---
+// Renders the login screen until Supabase has a session, then awaits the
+// store.bootstrap() hydration before mounting <App/>. Avoids rendering against
+// empty arrays when we know data is about to land.
+function LoginScreen() {
+  const [username, setUsername] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [err, setErr] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!username.trim() || !password) return;
+    setBusy(true); setErr(null);
+    const { error } = await store.signInWithUsername(username, password);
+    setBusy(false);
+    if (error) {
+      setErr(/invalid login/i.test(error.message) ? 'Username or password is incorrect.' : error.message);
+    }
+    // success path: onAuthChange in <Root/> takes over; no local state to flip.
+  };
+  const inputStyle = {padding:'10px 12px',fontSize:13,border:'1px solid var(--border)',borderRadius:8,background:'var(--bg)',color:'var(--text)'};
+  return (
+    <div style={{minHeight:'100vh',display:'grid',placeItems:'center',background:'var(--bg)',padding:24}}>
+      <div className="card" style={{padding:32,width:380,maxWidth:'92vw'}}>
+        <div className="hstack gap-3" style={{marginBottom:18}}>
+          <div style={{width:34,height:34,borderRadius:8,background:'var(--accent)',color:'#fff',display:'grid',placeItems:'center',fontWeight:700,fontSize:15}}>S</div>
+          <div className="vstack">
+            <div style={{fontWeight:600,fontSize:14}}>Skylar Caller CRM</div>
+            <div className="subtle" style={{fontSize:12}}>Sign in to access the shared pipeline</div>
+          </div>
+        </div>
+        <form onSubmit={submit} className="vstack gap-3">
+          <input type="text" required placeholder="Username" autoComplete="username" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+            value={username} onChange={e => setUsername(e.target.value)} style={inputStyle}/>
+          <input type="password" required placeholder="Password" autoComplete="current-password"
+            value={password} onChange={e => setPassword(e.target.value)} style={inputStyle}/>
+          {err && <div style={{color:'#dc2626',fontSize:12}}>{err}</div>}
+          <button className="btn btn-primary" disabled={busy} type="submit" style={{justifyContent:'center'}}>
+            {busy ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function Splash({ label }) {
+  return (
+    <div style={{minHeight:'100vh',display:'grid',placeItems:'center',background:'var(--bg)'}}>
+      <div className="subtle" style={{fontSize:13}}>{label || 'Loading…'}</div>
+    </div>
+  );
+}
+
+function Root() {
+  const [phase, setPhase] = React.useState('loading'); // loading | login | bootstrapping | ready
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const sub = store.onAuthChange(async (user) => {
+      if (cancelled) return;
+      if (!user) {
+        setPhase('login');
+        return;
+      }
+      setPhase('bootstrapping');
+      try {
+        await store.bootstrap(user);
+      } catch (e) {
+        console.error('[skylar] bootstrap failed', e);
+      }
+      if (!cancelled) setPhase('ready');
+    });
+    return () => {
+      cancelled = true;
+      sub?.data?.subscription?.unsubscribe?.();
+    };
+  }, []);
+
+  if (phase === 'loading') return <Splash/>;
+  if (phase === 'login') return <LoginScreen/>;
+  if (phase === 'bootstrapping') return <Splash label="Loading pipeline…"/>;
+  return <App/>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root/>);
 </script>
 </body>
 </html>

@@ -1,6 +1,8 @@
-// Skylar Caller CRM — data layer
-// localStorage-backed store, same global exports as the prototype so the JSX
-// modules don't need to change how they read data.
+// Skylar Caller CRM — Supabase-backed data layer.
+// Hydrated from Postgres after sign-in. Mutations apply optimistically to the
+// in-memory arrays (so the existing sync render path keeps working) and write
+// through to Supabase in the background. The same `store.*` API + `skylar-change`
+// event keep the .jsx files unchanged.
 
 const STAGES = [
   { id: 'new', label: 'New', className: 'stage-new' },
@@ -13,14 +15,13 @@ const STAGES = [
   { id: 'lost', label: 'Closed Lost', className: 'stage-lost' },
 ];
 
-const REPS = [
-  { id: 'u1', name: 'Derek Moreno', initials: 'DM', role: 'Caller' },
-  { id: 'u2', name: 'Amelia Park', initials: 'AP', role: 'Manager' },
-];
-const REP_OF = Object.fromEntries(REPS.map(r => [r.id, r]));
-
 const NICHES = ['HVAC', 'Roofing', 'Med Spa', 'Auto Body', 'Dental', 'Solar', 'Landscaping', 'Plumbing', 'Chiropractic', 'Law Firm', 'Accounting'];
 const SOURCES = ['Apollo list', 'Referral', 'LinkedIn', 'Cold list', 'Inbound web', 'Trade show', 'Google Maps scrape', 'Imported'];
+
+// REPS / REP_OF are now hydrated from the `reps` table after sign-in.
+// Start empty so any access before bootstrap is a safe undefined.
+const REPS = [];
+const REP_OF = {};
 
 // --- Date helpers ---
 function relativeDate(daysOffset) {
@@ -41,7 +42,6 @@ function formatTime(d) {
   if (!(d instanceof Date)) return '';
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
-// Safely build an href for a user-typed URL — don't double-prepend the scheme.
 function safeUrl(u) {
   if (!u) return '#';
   const s = String(u).trim();
@@ -49,12 +49,10 @@ function safeUrl(u) {
   if (/^(https?:|mailto:|tel:)/i.test(s)) return s;
   return `https://${s}`;
 }
-// Strip the scheme when displaying a URL so "https://foo.com/" → "foo.com/"
 function displayUrl(u) {
   if (!u) return '';
   return String(u).replace(/^https?:\/\//i, '').replace(/\/$/, '');
 }
-
 function formatDurationSec(sec) {
   if (!sec || isNaN(sec)) return '0:00';
   const m = Math.floor(sec / 60);
@@ -72,468 +70,186 @@ function relativeString(d) {
   return formatDate(d);
 }
 
-// --- Serialization ---
-const LEAD_DATE_FIELDS = ['lastCallAt', 'nextFollowupAt', 'createdAt'];
-
-function reviveLead(l) {
-  const out = { ...l };
-  for (const f of LEAD_DATE_FIELDS) out[f] = l[f] ? new Date(l[f]) : null;
-  return out;
-}
-function reviveCallLog(c) { return { ...c, at: new Date(c.at) }; }
-function reviveTask(t) { return { ...t, due: new Date(t.due) }; }
-function reviveNote(n) { return { ...n, at: new Date(n.at) }; }
-
-function loadJSON(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
-}
-function saveJSON(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { console.warn('localStorage write failed', e); }
+function deriveInitials(name) {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] || '?') + (parts[1]?.[0] || '')).toUpperCase();
 }
 
-// --- Demo seed (8 leads, used on first load so the UI isn't empty) ---
-function demoLeads() {
-  const seed = [
-    { first: 'Jordan',   last: 'Chen',        biz: 'Apex HVAC Co.',            phone: '(512) 555-0142', niche: 'HVAC',        city: 'Austin, TX',       stage: 'followup',   attempts: 3, lc: -2,  fu: 0,  src: 'Apollo list' },
-    { first: 'Casey',    last: 'Nguyen',      biz: 'Summit Roofing',            phone: '(214) 555-0187', niche: 'Roofing',     city: 'Dallas, TX',       stage: 'attempted',  attempts: 2, lc: -1,  fu: 1,  src: 'Cold list' },
-    { first: 'Morgan',   last: 'Patel',       biz: 'Ironclad Med Spa',         phone: '(602) 555-0121', niche: 'Med Spa',     city: 'Phoenix, AZ',      stage: 'new',        attempts: 0, lc: null,fu: null,src: 'LinkedIn' },
-    { first: 'Riley',    last: 'Rodriguez',   biz: 'Evergreen Auto Body',      phone: '(303) 555-0165', niche: 'Auto Body',   city: 'Denver, CO',       stage: 'contacted',  attempts: 1, lc: -3,  fu: 2,  src: 'Referral' },
-    { first: 'Avery',    last: 'Okafor',      biz: 'Pinecrest Dental',         phone: '(813) 555-0199', niche: 'Dental',      city: 'Tampa, FL',        stage: 'interested', attempts: 4, lc: 0,   fu: 3,  src: 'Apollo list' },
-    { first: 'Taylor',   last: 'Fisher',      biz: 'Blackwood Solar',          phone: '(305) 555-0178', niche: 'Solar',       city: 'Miami, FL',        stage: 'followup',   attempts: 2, lc: -4,  fu: 0,  src: 'Trade show' },
-    { first: 'Parker',   last: 'Brennan',     biz: 'Ridgeline Landscape Co.',  phone: '(404) 555-0133', niche: 'Landscaping', city: 'Atlanta, GA',      stage: 'booked',     attempts: 5, lc: -6,  fu: 5,  src: 'Inbound web' },
-    { first: 'Quinn',    last: 'Vasquez',     biz: 'Cornerstone Plumbing',     phone: '(704) 555-0152', niche: 'Plumbing',    city: 'Charlotte, NC',    stage: 'new',        attempts: 0, lc: null,fu: null,src: 'Google Maps scrape' },
-  ];
-  return seed.map((s, i) => ({
-    id: i === 0 ? 'L-1000' : `L-${1001 + i - 1}`,
-    fullName: `${s.first} ${s.last}`,
-    initials: (s.first[0] + s.last[0]).toUpperCase(),
-    business: s.biz,
-    phone: s.phone,
-    email: `${s.first.toLowerCase()}@${s.biz.toLowerCase().replace(/[^a-z]/g,'')}.com`,
-    website: `${s.biz.toLowerCase().replace(/[^a-z]/g,'')}.com`,
-    niche: s.niche,
-    location: s.city,
-    stage: s.stage,
-    ownerId: 'u1',
-    ownerName: 'Derek Moreno',
-    ownerInitials: 'DM',
-    source: s.src,
-    lastCallAt: s.lc == null ? null : relativeDate(s.lc),
-    nextFollowupAt: s.fu == null ? null : relativeDate(s.fu),
-    callAttempts: s.attempts,
-    createdAt: relativeDate(-14 - i),
-  }));
-}
+// --- Supabase client ---
+const SUPABASE_URL = 'https://ukojlspznrrjnoeuxacw.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_BybfTFm4CWDjcV2USxgvgQ__7bIxoTZ';
+// Fake-email domain used to translate UI usernames -> Supabase auth emails.
+// Must match the local-part of the emails you create in auth.users.
+const USERNAME_DOMAIN = 'skylar.local';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+});
 
-function demoNotes() {
+// --- Row mappers (snake_case <-> camelCase) ---
+function leadFromRow(r) {
   return {
-    'L-1000': [
-      { id: 'n1', at: relativeDate(-2), by: 'DM', body: "Spoke with Jordan briefly. Interested but busy till Thursday. Wants a short demo call. Mentioned they just lost a tech, considering outsourcing dispatch." },
-      { id: 'n2', at: relativeDate(-5), by: 'DM', body: "Left a voicemail. Mentioned we work with 3 HVAC shops in Austin already." },
-      { id: 'n3', at: relativeDate(-14), by: 'AP', body: "Pulled from Apollo — $2-5M revenue range, 12 employees. Good fit profile." },
-    ],
+    id: r.id,
+    fullName: r.full_name || '',
+    initials: r.initials || '',
+    business: r.business || '',
+    phone: r.phone || '',
+    email: r.email || '',
+    website: r.website || '',
+    niche: r.niche || '',
+    location: r.location || '',
+    street: r.street || '',
+    city: r.city || '',
+    state: r.state || '',
+    country: r.country || '',
+    rating: r.rating,
+    reviews: r.reviews,
+    mapsUrl: r.maps_url || '',
+    stage: r.stage || 'new',
+    ownerId: r.owner_id,
+    ownerName: REP_OF[r.owner_id]?.name || '',
+    ownerInitials: REP_OF[r.owner_id]?.initials || '',
+    source: r.source || '',
+    lastCallAt: r.last_call_at ? new Date(r.last_call_at) : null,
+    nextFollowupAt: r.next_followup_at ? new Date(r.next_followup_at) : null,
+    callAttempts: r.call_attempts || 0,
+    createdAt: r.created_at ? new Date(r.created_at) : null,
+  };
+}
+function leadToRow(l) {
+  return {
+    id: l.id,
+    full_name: l.fullName,
+    initials: l.initials || null,
+    business: l.business || null,
+    phone: l.phone || null,
+    email: l.email || null,
+    website: l.website || null,
+    niche: l.niche || null,
+    location: l.location || null,
+    street: l.street || null,
+    city: l.city || null,
+    state: l.state || null,
+    country: l.country || null,
+    rating: l.rating ?? null,
+    reviews: l.reviews ?? null,
+    maps_url: l.mapsUrl || null,
+    stage: l.stage,
+    owner_id: l.ownerId || null,
+    source: l.source || null,
+    last_call_at: l.lastCallAt ? l.lastCallAt.toISOString() : null,
+    next_followup_at: l.nextFollowupAt ? l.nextFollowupAt.toISOString() : null,
+    call_attempts: l.callAttempts || 0,
+    created_at: l.createdAt ? l.createdAt.toISOString() : new Date().toISOString(),
   };
 }
 
-function demoCallLogs(leads) {
-  const out = [];
-  const dispositions = ['Connected', 'No answer', 'Voicemail', 'Gatekeeper'];
-  // seeded history for Jordan Chen (L-1000)
-  out.push(
-    { id: 'CL-1', leadId: 'L-1000', leadName: 'Jordan Chen', business: 'Apex HVAC Co.', phone: '(512) 555-0142', disposition: 'Connected', duration: '4:12', at: relativeDate(-2), by: 'DM', outcome: 'Asked to call back Thu' },
-    { id: 'CL-2', leadId: 'L-1000', leadName: 'Jordan Chen', business: 'Apex HVAC Co.', phone: '(512) 555-0142', disposition: 'No answer', duration: '0:00', at: relativeDate(-5), by: 'DM', outcome: 'Left voicemail' },
-    { id: 'CL-3', leadId: 'L-1000', leadName: 'Jordan Chen', business: 'Apex HVAC Co.', phone: '(512) 555-0142', disposition: 'No answer', duration: '0:00', at: relativeDate(-8), by: 'DM', outcome: '—' },
-    { id: 'CL-4', leadId: 'L-1000', leadName: 'Jordan Chen', business: 'Apex HVAC Co.', phone: '(512) 555-0142', disposition: 'Gatekeeper', duration: '1:02', at: relativeDate(-11), by: 'DM', outcome: 'Owner not available' },
-  );
-  // a handful for other leads so the "Recent calls" card has content
-  leads.slice(1, 5).forEach((l, i) => {
-    const at = relativeDate(-i - 1);
-    at.setHours(9 + i, 15 * i);
-    const disp = dispositions[i % dispositions.length];
-    out.push({
-      id: `CL-${10 + i}`,
-      leadId: l.id,
-      leadName: l.fullName,
-      business: l.business,
-      phone: l.phone,
-      disposition: disp,
-      duration: disp === 'Connected' ? '3:21' : disp === 'Gatekeeper' ? '0:48' : '0:00',
-      at,
-      by: 'DM',
-      outcome: disp === 'Connected' ? 'Scheduled demo' : '—',
-    });
-  });
-  out.sort((a, b) => b.at - a.at);
-  return out;
+function callLogFromRow(r) {
+  return {
+    id: r.id,
+    leadId: r.lead_id,
+    leadName: r.lead_name || '',
+    business: r.business || '',
+    phone: r.phone || '',
+    disposition: r.disposition || '',
+    duration: r.duration || '0:00',
+    at: new Date(r.at),
+    by: REP_OF[r.by_rep]?.initials || '',
+    outcome: r.outcome || '—',
+    callSid: r.call_sid,
+    recordingSid: r.recording_sid,
+    recordingUrl: r.recording_url,
+  };
+}
+function callLogToRow(c) {
+  return {
+    id: c.id,
+    lead_id: c.leadId || null,
+    lead_name: c.leadName || null,
+    business: c.business || null,
+    phone: c.phone || null,
+    disposition: c.disposition || null,
+    duration: c.duration || null,
+    at: (c.at instanceof Date ? c.at : new Date()).toISOString(),
+    by_rep: store.user?.id || null,
+    outcome: c.outcome || null,
+    call_sid: c.callSid || null,
+    recording_sid: c.recordingSid || null,
+    recording_url: c.recordingUrl || null,
+  };
 }
 
-function demoTasks(leads) {
-  const kinds = ['Call follow-up', 'Send email', 'Book demo', 'Send proposal', 'Check in'];
-  const out = [];
-  leads.forEach((l, i) => {
-    if (l.nextFollowupAt) {
-      const due = new Date(l.nextFollowupAt);
-      due.setHours(9 + (i % 8), [0, 15, 30, 45][i % 4]);
-      out.push({
-        id: `T-${3000 + i}`,
-        kind: kinds[i % kinds.length],
-        leadId: l.id,
-        leadName: l.fullName,
-        business: l.business,
-        phone: l.phone,
-        due,
-        done: false,
-        owner: 'DM',
-      });
-    }
-  });
-  out.sort((a, b) => a.due - b.due);
-  return out;
+function taskFromRow(r) {
+  const lead = LEAD_OF[r.lead_id];
+  return {
+    id: r.id,
+    kind: r.kind,
+    leadId: r.lead_id,
+    leadName: lead?.fullName || '',
+    business: lead?.business || '',
+    phone: lead?.phone || '',
+    due: new Date(r.due),
+    done: !!r.done,
+    owner: REP_OF[r.owner_id]?.initials || '',
+  };
+}
+function taskToRow(t) {
+  return {
+    id: t.id,
+    kind: t.kind,
+    lead_id: t.leadId,
+    due: t.due.toISOString(),
+    done: !!t.done,
+    owner_id: store.user?.id || null,
+  };
 }
 
-// --- Store ---
-const store = {
-  leads: [],
-  callLogs: [],
-  tasks: [],
-  notes: {},
-  messages: {},  // leadId -> [{id, direction: 'in'|'out', body, at, sid, status}]
-  me: 'u1',
+function noteFromRow(r) {
+  return {
+    id: r.id,
+    leadId: r.lead_id,
+    at: new Date(r.at),
+    by: REP_OF[r.by_rep]?.initials || '',
+    body: r.body,
+  };
+}
+function noteToRow(n) {
+  return {
+    id: n.id,
+    lead_id: n.leadId,
+    at: n.at.toISOString(),
+    by_rep: store.user?.id || null,
+    body: n.body,
+  };
+}
 
-  load() {
-    const rawLeads = loadJSON('skylar:leads', null);
-    const rawCalls = loadJSON('skylar:call_logs', null);
-    const rawTasks = loadJSON('skylar:tasks', null);
-    const rawNotes = loadJSON('skylar:notes', null);
-    const rawMsgs = loadJSON('skylar:messages', null);
-    const me = localStorage.getItem('skylar:me');
+function messageFromRow(r) {
+  return {
+    id: r.id,
+    leadId: r.lead_id,
+    direction: r.direction,
+    body: r.body,
+    at: new Date(r.at),
+    sid: r.sid,
+    status: r.status,
+  };
+}
+function messageToRow(m) {
+  return {
+    id: m.id,
+    lead_id: m.leadId,
+    direction: m.direction,
+    body: m.body,
+    at: (m.at instanceof Date ? m.at : new Date()).toISOString(),
+    sid: m.sid || null,
+    status: m.status || null,
+  };
+}
 
-    if (rawLeads && rawLeads.length) {
-      this.leads.push(...rawLeads.map(reviveLead));
-      this.callLogs.push(...(rawCalls || []).map(reviveCallLog));
-      this.tasks.push(...(rawTasks || []).map(reviveTask));
-      this.notes = rawNotes
-        ? Object.fromEntries(Object.entries(rawNotes).map(([k, arr]) => [k, arr.map(reviveNote)]))
-        : {};
-      this.messages = rawMsgs
-        ? Object.fromEntries(Object.entries(rawMsgs).map(([k, arr]) => [k, arr.map(reviveNote)]))
-        : {};
-    } else {
-      // first-load seed
-      const seed = demoLeads();
-      this.leads.push(...seed);
-      this.callLogs.push(...demoCallLogs(seed));
-      this.tasks.push(...demoTasks(seed));
-      this.notes = demoNotes();
-      this.messages = {};
-      this.save();
-    }
-    if (me) this.me = me;
-    this.rebuildIndex();
-  },
-
-  save() {
-    saveJSON('skylar:leads', this.leads);
-    saveJSON('skylar:call_logs', this.callLogs);
-    saveJSON('skylar:tasks', this.tasks);
-    saveJSON('skylar:notes', this.notes);
-    saveJSON('skylar:messages', this.messages);
-  },
-
-  dirty() {
-    this.save();
-    window.dispatchEvent(new Event('skylar-change'));
-  },
-
-  rebuildIndex() {
-    for (const k of Object.keys(LEAD_OF)) delete LEAD_OF[k];
-    for (const l of this.leads) LEAD_OF[l.id] = l;
-  },
-
-  currentRep() { return REP_OF[this.me] || REPS[0]; },
-
-  addLead(lead) {
-    const rep = this.currentRep();
-    const full = {
-      id: `L-${Date.now()}`,
-      fullName: '',
-      initials: '',
-      business: '',
-      phone: '',
-      email: '',
-      website: '',
-      niche: '',
-      location: '',
-      stage: 'new',
-      ownerId: rep.id,
-      ownerName: rep.name,
-      ownerInitials: rep.initials,
-      source: 'Manual',
-      lastCallAt: null,
-      nextFollowupAt: null,
-      callAttempts: 0,
-      createdAt: new Date(),
-      ...lead,
-    };
-    if (!full.initials && full.fullName) {
-      const parts = full.fullName.trim().split(/\s+/);
-      full.initials = ((parts[0]?.[0] || '?') + (parts[1]?.[0] || '')).toUpperCase();
-    }
-    this.leads.unshift(full);
-    this.rebuildIndex();
-    this.dirty();
-    return full;
-  },
-
-  updateLead(id, patch) {
-    const l = this.leads.find(x => x.id === id);
-    if (!l) return;
-    Object.assign(l, patch);
-    this.dirty();
-  },
-
-  deleteLead(id) {
-    const idx = this.leads.findIndex(l => l.id === id);
-    if (idx < 0) return;
-    this.leads.splice(idx, 1);
-    delete LEAD_OF[id];
-    delete this.notes[id];
-    delete this.messages[id];
-    this.tasks = this.tasks.filter(t => t.leadId !== id);
-    // keep call logs — just null out the leadId so history survives
-    this.callLogs.forEach(c => { if (c.leadId === id) c.leadId = null; });
-    this.dirty();
-  },
-
-  updateCallLog(id, patch) {
-    const c = this.callLogs.find(x => x.id === id);
-    if (!c) return;
-    Object.assign(c, patch);
-    this.dirty();
-  },
-
-  importLeads(rows) {
-    const rep = this.currentRep();
-    const now = Date.now();
-    const mapped = rows.map((row, i) => {
-      // Business-listing format (Google Maps / Apify) uses `title`.
-      // Person-listing format uses `name` / `fullname` / `first`+`last`.
-      const title = (row.title || '').trim();
-      const business = (row.business || row.company || title).trim();
-      const personName = (row.name || row.fullname || `${row.first || ''} ${row.last || ''}`).trim();
-      const fullName = personName || business || 'Unknown';
-      const parts = fullName.split(/\s+/).filter(Boolean);
-      const initials = ((parts[0]?.[0] || '?') + (parts[1]?.[0] || '')).toUpperCase();
-
-      // Niche: try structured fields first, then fall back to Apify's quirks.
-      const niche = row.niche || row.industry || row['categories/0'] || row.categoryname || row.category || '';
-
-      // Location: if we have street/state, join them; otherwise use city/location verbatim.
-      const location = [row.street, row.city, row.state].filter(Boolean).join(', ')
-                    || row.city || row.location || '';
-
-      // Optional extras — preserve if present so the detail page can show them.
-      const rating  = row.totalscore || row.rating ? Number(row.totalscore || row.rating) : null;
-      const reviews = row.reviewscount || row.reviews ? Number(row.reviewscount || row.reviews) : null;
-      const mapsUrl = row.url || row.mapsurl || '';
-
-      return {
-        id: `L-${now}-${i}`,
-        fullName,
-        initials,
-        business,
-        phone: row.phone || row.phonenumber || '',
-        email: row.email || '',
-        website: row.website || '',
-        niche,
-        location,
-        street: row.street || '',
-        city: row.city || '',
-        state: row.state || '',
-        country: row.countrycode || row.country || '',
-        rating,
-        reviews,
-        mapsUrl,
-        stage: 'new',
-        ownerId: rep.id,
-        ownerName: rep.name,
-        ownerInitials: rep.initials,
-        source: row.source || (title ? 'Google Maps' : 'Imported'),
-        lastCallAt: null,
-        nextFollowupAt: null,
-        callAttempts: 0,
-        createdAt: new Date(),
-      };
-    });
-    this.leads.splice(0, this.leads.length, ...mapped);
-    this.callLogs.length = 0;
-    this.tasks.length = 0;
-    this.notes = {};
-    this.messages = {};
-    this.rebuildIndex();
-    this.dirty();
-    return mapped.length;
-  },
-
-  addCallLog({ leadId, disposition, outcome, duration, note, snapshot, callSid }) {
-    const lead = LEAD_OF[leadId];
-    // snapshot is used for ad-hoc calls where leadId doesn't match a stored lead.
-    const fallback = snapshot || {};
-    const rep = this.currentRep();
-    const entry = {
-      id: `CL-${Date.now()}`,
-      leadId: lead ? leadId : null,
-      leadName: lead ? lead.fullName : (fallback.fullName || 'Unknown'),
-      business: lead ? lead.business : (fallback.business || 'Ad-hoc'),
-      phone:    lead ? lead.phone    : (fallback.phone    || ''),
-      disposition,
-      duration: duration || '0:00',
-      at: new Date(),
-      by: rep.initials,
-      outcome: outcome || '—',
-      callSid: callSid || null,
-    };
-    this.callLogs.unshift(entry);
-    if (lead) {
-      lead.lastCallAt = entry.at;
-      lead.callAttempts = (lead.callAttempts || 0) + 1;
-      if (note && note.trim()) {
-        (this.notes[leadId] ||= []).unshift({
-          id: `n-${Date.now()}`,
-          at: new Date(),
-          by: rep.initials,
-          body: note.trim(),
-        });
-      }
-    }
-    this.dirty();
-    return entry;
-  },
-
-  addNote(leadId, body) {
-    if (!body || !body.trim()) return;
-    const rep = this.currentRep();
-    (this.notes[leadId] ||= []).unshift({
-      id: `n-${Date.now()}`,
-      at: new Date(),
-      by: rep.initials,
-      body: body.trim(),
-    });
-    this.dirty();
-  },
-
-  getNotes(leadId) { return this.notes[leadId] || []; },
-  getCallHistory(leadId) { return this.callLogs.filter(c => c.leadId === leadId); },
-
-  addMessage(leadId, msg) {
-    const entry = {
-      id: `M-${Date.now()}`,
-      direction: 'out',
-      body: '',
-      at: new Date(),
-      status: null,
-      sid: null,
-      ...msg,
-    };
-    (this.messages[leadId] ||= []).push(entry);
-    this.dirty();
-    return entry;
-  },
-  getMessages(leadId) { return this.messages[leadId] || []; },
-
-  attachRecording(leadId, recording) {
-    // Try (in order): callSid match, exact leadId match, then most recent log
-    // without a recording yet (handles ad-hoc calls where leadId is null).
-    let target = null;
-    if (recording.callSid) target = this.callLogs.find(c => c.callSid === recording.callSid);
-    if (!target && leadId)  target = this.callLogs.find(c => c.leadId === leadId);
-    if (!target)            target = this.callLogs.find(c => !c.recordingSid);
-    if (target && target.recordingSid !== recording.recordingSid) {
-      target.recordingSid = recording.recordingSid;
-      target.recordingUrl = `/api/recording-play?sid=${encodeURIComponent(recording.recordingSid)}`;
-      if (recording.duration) target.duration = formatDurationSec(Number(recording.duration));
-      this.dirty();
-    }
-  },
-
-  clearAll() {
-    this.leads.length = 0;
-    this.callLogs.length = 0;
-    this.tasks.length = 0;
-    this.notes = {};
-    this.messages = {};
-    this.rebuildIndex();
-    this.dirty();
-  },
-
-  toggleTask(id) {
-    const t = this.tasks.find(x => x.id === id);
-    if (!t) return;
-    t.done = !t.done;
-    this.dirty();
-  },
-
-  setTask(leadId, due, kind = 'Call follow-up') {
-    const lead = LEAD_OF[leadId];
-    if (!lead) return;
-    // replace any existing follow-up for this lead with the new one
-    const idx = this.tasks.findIndex(t => t.leadId === leadId && !t.done && t.kind === kind);
-    const entry = {
-      id: idx >= 0 ? this.tasks[idx].id : `T-${Date.now()}`,
-      kind,
-      leadId,
-      leadName: lead.fullName,
-      business: lead.business,
-      phone: lead.phone,
-      due,
-      done: false,
-      owner: this.currentRep().initials,
-    };
-    if (idx >= 0) this.tasks[idx] = entry;
-    else this.tasks.push(entry);
-    this.tasks.sort((a, b) => a.due - b.due);
-    lead.nextFollowupAt = due;
-    this.dirty();
-  },
-
-  clearFollowup(leadId) {
-    this.tasks = this.tasks.filter(t => !(t.leadId === leadId && !t.done && t.kind === 'Call follow-up'));
-    const lead = LEAD_OF[leadId];
-    if (lead) lead.nextFollowupAt = null;
-    this.dirty();
-  },
-
-  setMe(id) {
-    if (!REP_OF[id]) return;
-    this.me = id;
-    localStorage.setItem('skylar:me', id);
-    window.dispatchEvent(new Event('skylar-change'));
-  },
-
-  resetDemo() {
-    this.leads.length = 0;
-    this.callLogs.length = 0;
-    this.tasks.length = 0;
-    this.notes = {};
-    const seed = demoLeads();
-    this.leads.push(...seed);
-    this.callLogs.push(...demoCallLogs(seed));
-    this.tasks.push(...demoTasks(seed));
-    this.notes = demoNotes();
-    this.rebuildIndex();
-    this.dirty();
-  },
-};
+function logErr(label, error) {
+  if (error) console.warn(`[supabase] ${label} failed`, error);
+}
 
 // --- CSV/TSV parser ---
-// Auto-detects delimiter: if the header row has tabs and no commas, uses tabs.
-// Handles quoted fields with embedded delimiters and doubled "" escapes.
 function parseDelimited(text) {
   const lines = text.replace(/\r\n?/g, '\n').split('\n').filter(l => l.length);
   if (!lines.length) return [];
@@ -564,6 +280,434 @@ function parseDelimited(text) {
 }
 const parseCSV = parseDelimited;
 
+// --- Store ---
+const store = {
+  user: null,           // Supabase auth user once signed in
+  leads: [],
+  callLogs: [],
+  tasks: [],
+  notes: {},
+  messages: {},
+  me: null,             // user.id (uuid) — real audit identity, never mutated during view-as
+  viewingAs: null,      // rep uuid an owner has temporarily "stepped into"; null otherwise
+
+  // --- Auth ---
+  // Supabase's password provider requires an email. We expose usernames in the
+  // UI and transparently map `username` -> `username@skylar.local` at the edge,
+  // so workers never see or type an email. Change USERNAME_DOMAIN if you ever
+  // rebrand — it must match the local-part of the auth.users emails you create.
+  async signInWithUsername(username, password) {
+    const uname = (username || '').trim().toLowerCase();
+    if (!uname) return { error: { message: 'Username required.' } };
+    const email = `${uname}@${USERNAME_DOMAIN}`;
+    return await sb.auth.signInWithPassword({ email, password });
+  },
+  async signOut() {
+    await sb.auth.signOut();
+    this.user = null;
+    this.me = null;
+    this.viewingAs = null;
+    REPS.length = 0;
+    Object.keys(REP_OF).forEach(k => delete REP_OF[k]);
+    this.clearLocal();
+    this.dirty();
+  },
+  // Subscribe to auth state. Calls cb(user|null) immediately with current session
+  // and again on every change. Returns the supabase subscription handle.
+  onAuthChange(cb) {
+    sb.auth.getSession().then(({ data: { session } }) => cb(session?.user || null));
+    return sb.auth.onAuthStateChange((_event, session) => cb(session?.user || null));
+  },
+
+  // Called after sign-in: ensure a `reps` row, load all reps, hydrate everything.
+  async bootstrap(user) {
+    this.user = user;
+    this.me = user.id;
+
+    const email = user.email || '';
+    const name = user.user_metadata?.name || email.split('@')[0] || 'Caller';
+    const initials = deriveInitials(name);
+    {
+      // Insert a reps row if missing, but don't overwrite an existing one —
+      // the `role` ('owner'|'caller') is seeded by migration SQL and must stick.
+      const { error } = await sb.from('reps')
+        .upsert({ id: user.id, name, initials, role: 'caller' }, { onConflict: 'id', ignoreDuplicates: true });
+      logErr('reps upsert', error);
+    }
+
+    const { data: reps, error: repsErr } = await sb.from('reps').select('*');
+    logErr('reps select', repsErr);
+    REPS.length = 0;
+    REPS.push(...(reps || []));
+    Object.keys(REP_OF).forEach(k => delete REP_OF[k]);
+    for (const r of REPS) REP_OF[r.id] = r;
+
+    await this.hydrate();
+  },
+
+  async hydrate() {
+    const [leadsR, callsR, tasksR, notesR, msgsR] = await Promise.all([
+      sb.from('leads').select('*').order('created_at', { ascending: false }),
+      sb.from('call_logs').select('*').order('at', { ascending: false }),
+      sb.from('tasks').select('*'),
+      sb.from('notes').select('*').order('at', { ascending: false }),
+      sb.from('messages').select('*').order('at'),
+    ]);
+    logErr('hydrate leads', leadsR.error);
+    logErr('hydrate call_logs', callsR.error);
+    logErr('hydrate tasks', tasksR.error);
+    logErr('hydrate notes', notesR.error);
+    logErr('hydrate messages', msgsR.error);
+
+    this.leads.splice(0, this.leads.length, ...((leadsR.data) || []).map(leadFromRow));
+    this.rebuildIndex();
+    // tasks need LEAD_OF populated to denormalize lead name/business/phone.
+    this.callLogs.splice(0, this.callLogs.length, ...((callsR.data) || []).map(callLogFromRow));
+    this.tasks.splice(0, this.tasks.length, ...((tasksR.data) || []).map(taskFromRow));
+
+    this.notes = {};
+    for (const n of (notesR.data || [])) {
+      const local = noteFromRow(n);
+      (this.notes[local.leadId] ||= []).push(local);
+    }
+    this.messages = {};
+    for (const m of (msgsR.data || [])) {
+      const local = messageFromRow(m);
+      (this.messages[local.leadId] ||= []).push(local);
+    }
+    this.dirty();
+  },
+
+  clearLocal() {
+    this.leads.length = 0;
+    this.callLogs.length = 0;
+    this.tasks.length = 0;
+    this.notes = {};
+    this.messages = {};
+    this.rebuildIndex();
+  },
+
+  rebuildIndex() {
+    Object.keys(LEAD_OF).forEach(k => delete LEAD_OF[k]);
+    for (const l of this.leads) LEAD_OF[l.id] = l;
+  },
+
+  dirty() { window.dispatchEvent(new Event('skylar-change')); },
+
+  currentRep() {
+    return REP_OF[this.me] || REPS[0] || { id: this.me, name: '', initials: '?', role: 'caller' };
+  },
+
+  // --- View-as (owner impersonation, client-side only) ---
+  // `me` is the real signed-in uuid used for every INSERT's by_rep / owner_id.
+  // `viewingAs` is what the UI should filter/display against.
+  // Writes never use viewingAs — the audit trail stays honest.
+  isOwner() {
+    return REP_OF[this.me]?.role === 'owner';
+  },
+  effectiveMe() {
+    return this.viewingAs || this.me;
+  },
+  setViewingAs(repId) {
+    if (!this.isOwner()) return;
+    if (!repId || repId === this.me) return;
+    if (!REP_OF[repId]) return;
+    this.viewingAs = repId;
+    this.dirty();
+  },
+  clearViewingAs() {
+    if (!this.viewingAs) return;
+    this.viewingAs = null;
+    this.dirty();
+  },
+
+  addLead(lead) {
+    const rep = this.currentRep();
+    const id = crypto.randomUUID();
+    const full = {
+      id,
+      fullName: '',
+      initials: '',
+      business: '',
+      phone: '',
+      email: '',
+      website: '',
+      niche: '',
+      location: '',
+      stage: 'new',
+      ownerId: this.me || null,
+      ownerName: rep?.name || '',
+      ownerInitials: rep?.initials || '',
+      source: 'Manual',
+      lastCallAt: null,
+      nextFollowupAt: null,
+      callAttempts: 0,
+      createdAt: new Date(),
+      ...lead,
+    };
+    if (!full.initials && full.fullName) full.initials = deriveInitials(full.fullName);
+    this.leads.unshift(full);
+    LEAD_OF[id] = full;
+    this.dirty();
+    sb.from('leads').insert(leadToRow(full)).then(({ error }) => logErr('addLead', error));
+    return full;
+  },
+
+  updateLead(id, patch) {
+    const l = LEAD_OF[id] || this.leads.find(x => x.id === id);
+    if (!l) return;
+    Object.assign(l, patch);
+    this.dirty();
+    sb.from('leads').update(leadToRow(l)).eq('id', id).then(({ error }) => logErr('updateLead', error));
+  },
+
+  deleteLead(id) {
+    const idx = this.leads.findIndex(l => l.id === id);
+    if (idx < 0) return;
+    this.leads.splice(idx, 1);
+    delete LEAD_OF[id];
+    delete this.notes[id];
+    delete this.messages[id];
+    this.tasks = this.tasks.filter(t => t.leadId !== id);
+    // keep call logs — null out the leadId so history survives the delete.
+    this.callLogs.forEach(c => { if (c.leadId === id) c.leadId = null; });
+    this.dirty();
+    // Postgres ON DELETE handles tasks/notes/messages cascade;
+    // call_logs uses ON DELETE SET NULL so history is preserved server-side too.
+    sb.from('leads').delete().eq('id', id).then(({ error }) => logErr('deleteLead', error));
+  },
+
+  updateCallLog(id, patch) {
+    const c = this.callLogs.find(x => x.id === id);
+    if (!c) return;
+    Object.assign(c, patch);
+    this.dirty();
+    sb.from('call_logs').update(callLogToRow(c)).eq('id', id).then(({ error }) => logErr('updateCallLog', error));
+  },
+
+  async importLeads(rows) {
+    const rep = this.currentRep();
+    const mapped = rows.map((row) => {
+      const title = (row.title || '').trim();
+      const business = (row.business || row.company || title).trim();
+      const personName = (row.name || row.fullname || `${row.first || ''} ${row.last || ''}`).trim();
+      const fullName = personName || business || 'Unknown';
+      const initials = deriveInitials(fullName);
+
+      const niche = row.niche || row.industry || row['categories/0'] || row.categoryname || row.category || '';
+      const location = [row.street, row.city, row.state].filter(Boolean).join(', ') || row.city || row.location || '';
+      const rating  = row.totalscore || row.rating ? Number(row.totalscore || row.rating) : null;
+      const reviews = row.reviewscount || row.reviews ? Number(row.reviewscount || row.reviews) : null;
+      const mapsUrl = row.url || row.mapsurl || '';
+
+      return {
+        id: crypto.randomUUID(),
+        fullName,
+        initials,
+        business,
+        phone: row.phone || row.phonenumber || '',
+        email: row.email || '',
+        website: row.website || '',
+        niche,
+        location,
+        street: row.street || '',
+        city: row.city || '',
+        state: row.state || '',
+        country: row.countrycode || row.country || '',
+        rating,
+        reviews,
+        mapsUrl,
+        stage: 'new',
+        ownerId: this.me || null,
+        ownerName: rep?.name || '',
+        ownerInitials: rep?.initials || '',
+        source: row.source || (title ? 'Google Maps' : 'Imported'),
+        lastCallAt: null,
+        nextFollowupAt: null,
+        callAttempts: 0,
+        createdAt: new Date(),
+      };
+    });
+
+    // Append, don't wipe — multiple reps share this pipeline now.
+    // Use clearAll (Tweaks panel) for an explicit reset.
+    this.leads.unshift(...mapped);
+    this.rebuildIndex();
+    this.dirty();
+
+    const CHUNK = 500;
+    for (let i = 0; i < mapped.length; i += CHUNK) {
+      const chunk = mapped.slice(i, i + CHUNK).map(leadToRow);
+      const { error } = await sb.from('leads').insert(chunk);
+      logErr('importLeads chunk', error);
+    }
+    return mapped.length;
+  },
+
+  addCallLog({ leadId, disposition, outcome, duration, note, snapshot, callSid }) {
+    const lead = LEAD_OF[leadId];
+    const fallback = snapshot || {};
+    const rep = this.currentRep();
+    const entry = {
+      id: crypto.randomUUID(),
+      leadId: lead ? leadId : null,
+      leadName: lead ? lead.fullName : (fallback.fullName || 'Unknown'),
+      business: lead ? lead.business : (fallback.business || 'Ad-hoc'),
+      phone:    lead ? lead.phone    : (fallback.phone    || ''),
+      disposition,
+      duration: duration || '0:00',
+      at: new Date(),
+      by: rep?.initials || '',
+      outcome: outcome || '—',
+      callSid: callSid || null,
+    };
+    this.callLogs.unshift(entry);
+    if (lead) {
+      lead.lastCallAt = entry.at;
+      lead.callAttempts = (lead.callAttempts || 0) + 1;
+      sb.from('leads')
+        .update({ last_call_at: entry.at.toISOString(), call_attempts: lead.callAttempts })
+        .eq('id', lead.id)
+        .then(({ error }) => logErr('lead-after-call update', error));
+    }
+    sb.from('call_logs').insert(callLogToRow(entry)).then(({ error }) => logErr('addCallLog', error));
+    if (lead && note && note.trim()) {
+      this.addNote(leadId, note.trim());
+    } else {
+      this.dirty();
+    }
+    return entry;
+  },
+
+  addNote(leadId, body) {
+    if (!body || !body.trim()) return;
+    const rep = this.currentRep();
+    const entry = {
+      id: crypto.randomUUID(),
+      leadId,
+      at: new Date(),
+      by: rep?.initials || '',
+      body: body.trim(),
+    };
+    (this.notes[leadId] ||= []).unshift(entry);
+    this.dirty();
+    sb.from('notes').insert(noteToRow(entry)).then(({ error }) => logErr('addNote', error));
+  },
+
+  getNotes(leadId) { return this.notes[leadId] || []; },
+  getCallHistory(leadId) { return this.callLogs.filter(c => c.leadId === leadId); },
+
+  addMessage(leadId, msg) {
+    const entry = {
+      id: crypto.randomUUID(),
+      direction: 'out',
+      body: '',
+      at: new Date(),
+      status: null,
+      sid: null,
+      ...msg,
+      leadId,
+    };
+    (this.messages[leadId] ||= []).push(entry);
+    this.dirty();
+    sb.from('messages').insert(messageToRow(entry)).then(({ error }) => logErr('addMessage', error));
+    return entry;
+  },
+  getMessages(leadId) { return this.messages[leadId] || []; },
+
+  attachRecording(leadId, recording) {
+    let target = null;
+    if (recording.callSid) target = this.callLogs.find(c => c.callSid === recording.callSid);
+    if (!target && leadId)  target = this.callLogs.find(c => c.leadId === leadId);
+    if (!target)            target = this.callLogs.find(c => !c.recordingSid);
+    if (target && target.recordingSid !== recording.recordingSid) {
+      target.recordingSid = recording.recordingSid;
+      target.recordingUrl = `/api/recording-play?sid=${encodeURIComponent(recording.recordingSid)}`;
+      if (recording.duration) target.duration = formatDurationSec(Number(recording.duration));
+      this.dirty();
+      sb.from('call_logs').update({
+        recording_sid: target.recordingSid,
+        recording_url: target.recordingUrl,
+        duration: target.duration,
+      }).eq('id', target.id).then(({ error }) => logErr('attachRecording', error));
+    }
+  },
+
+  async clearAll() {
+    this.leads.length = 0;
+    this.callLogs.length = 0;
+    this.tasks.length = 0;
+    this.notes = {};
+    this.messages = {};
+    this.rebuildIndex();
+    this.dirty();
+    // Order matters even with cascades: delete leaves first.
+    // Supabase requires a filter on .delete(), so use a sentinel uuid neq.
+    const SENTINEL = '00000000-0000-0000-0000-000000000000';
+    for (const t of ['messages', 'notes', 'tasks', 'call_logs', 'leads']) {
+      const { error } = await sb.from(t).delete().neq('id', SENTINEL);
+      logErr(`clearAll ${t}`, error);
+    }
+  },
+
+  toggleTask(id) {
+    const t = this.tasks.find(x => x.id === id);
+    if (!t) return;
+    t.done = !t.done;
+    this.dirty();
+    sb.from('tasks').update({ done: t.done }).eq('id', id).then(({ error }) => logErr('toggleTask', error));
+  },
+
+  setTask(leadId, due, kind = 'Call follow-up') {
+    const lead = LEAD_OF[leadId];
+    if (!lead) return;
+    const idx = this.tasks.findIndex(t => t.leadId === leadId && !t.done && t.kind === kind);
+    const id = idx >= 0 ? this.tasks[idx].id : crypto.randomUUID();
+    const entry = {
+      id,
+      kind,
+      leadId,
+      leadName: lead.fullName,
+      business: lead.business,
+      phone: lead.phone,
+      due,
+      done: false,
+      owner: this.currentRep()?.initials || '',
+    };
+    if (idx >= 0) this.tasks[idx] = entry;
+    else this.tasks.push(entry);
+    this.tasks.sort((a, b) => a.due - b.due);
+    lead.nextFollowupAt = due;
+    this.dirty();
+
+    sb.from('tasks').upsert(taskToRow(entry), { onConflict: 'id' })
+      .then(({ error }) => logErr('setTask upsert', error));
+    sb.from('leads').update({ next_followup_at: due.toISOString() }).eq('id', leadId)
+      .then(({ error }) => logErr('setTask lead update', error));
+  },
+
+  clearFollowup(leadId) {
+    const removed = this.tasks.filter(t => t.leadId === leadId && !t.done && t.kind === 'Call follow-up');
+    this.tasks = this.tasks.filter(t => !(t.leadId === leadId && !t.done && t.kind === 'Call follow-up'));
+    const lead = LEAD_OF[leadId];
+    if (lead) lead.nextFollowupAt = null;
+    this.dirty();
+    for (const t of removed) {
+      sb.from('tasks').delete().eq('id', t.id).then(({ error }) => logErr('clearFollowup task delete', error));
+    }
+    if (lead) {
+      sb.from('leads').update({ next_followup_at: null }).eq('id', leadId)
+        .then(({ error }) => logErr('clearFollowup lead update', error));
+    }
+  },
+
+  // resetDemo is a no-op now that the DB is authoritative — there's no demo
+  // seed to regenerate. Use clearAll + a CSV import instead.
+  resetDemo() {
+    console.info('[skylar] resetDemo is a no-op now — use Clear all + CSV import.');
+  },
+};
+
 // --- Globals bound to the store's live arrays ---
 const LEADS = store.leads;
 const CALL_LOGS = store.callLogs;
@@ -571,16 +715,9 @@ const TASKS = store.tasks;
 const LEAD_OF = {};
 const STAGE_OF = Object.fromEntries(STAGES.map(s => [s.id, s]));
 
-store.load();
-
-// Hero lead accessors (used by lead-detail variants)
-const CALL_HISTORY_HERO = store.getCallHistory('L-1000');
-const NOTES_HERO = store.getNotes('L-1000');
-
 Object.assign(window, {
   STAGES, REPS, REP_OF, NICHES, SOURCES,
   LEADS, LEAD_OF, STAGE_OF, CALL_LOGS, TASKS,
-  CALL_HISTORY_HERO, NOTES_HERO,
   formatDate, formatDateTime, formatTime, relativeString, relativeDate, formatDurationSec,
   parseCSV, parseDelimited, safeUrl, displayUrl,
   store,

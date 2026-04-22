@@ -7,7 +7,7 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
 
   const filtered = LEADS.filter(l => {
     if (filter === 'all') return true;
-    if (filter === 'mine') return l.ownerId === store.me;
+    if (filter === 'mine') return l.ownerId === store.effectiveMe();
     if (filter === 'active') return !['won','lost'].includes(l.stage);
     if (filter === 'today') return l.nextFollowupAt && isToday(l.nextFollowupAt);
     return true;
@@ -31,7 +31,7 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
       </div>
 
       <div className="hstack gap-2" style={{marginBottom:14,flexWrap:'wrap'}}>
-        {[['all','All',LEADS.length],['mine','Assigned to me',LEADS.filter(l=>l.ownerId===store.me).length],['active','Active',LEADS.filter(l=>!['won','lost'].includes(l.stage)).length],['today','Due today',LEADS.filter(l=>l.nextFollowupAt&&isToday(l.nextFollowupAt)).length]].map(([id,label,count])=>(
+        {[['all','All',LEADS.length],['mine','Assigned to me',LEADS.filter(l=>l.ownerId===store.effectiveMe()).length],['active','Active',LEADS.filter(l=>!['won','lost'].includes(l.stage)).length],['today','Due today',LEADS.filter(l=>l.nextFollowupAt&&isToday(l.nextFollowupAt)).length]].map(([id,label,count])=>(
             <button key={id} className="btn btn-sm" style={{borderColor: filter===id?'var(--text)':'var(--border)',background: filter===id?'var(--surface-2)':'var(--surface)'}} onClick={()=>setFilter(id)}>
               {label} <span className="subtle mono" style={{marginLeft:4}}>{count}</span>
             </button>

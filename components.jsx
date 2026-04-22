@@ -57,8 +57,11 @@ const Icon = ({ name, size = 16, stroke = 1.6, style, ...rest }) => {
 };
 
 // Sidebar
-const Sidebar = ({ current, onNav, counts = {}, me, onSwitchMe }) => {
-  const rep = REP_OF[me] || REPS[0];
+const Sidebar = ({ current, onNav, counts = {}, me, viewingAs, onSignOut, onSetViewingAs }) => {
+  const realRep = REP_OF[me] || REPS[0] || { initials: '?', name: '', role: 'caller' };
+  const isOwner = realRep.role === 'owner';
+  const viewedRep = viewingAs ? REP_OF[viewingAs] : null;
+  const workers = REPS.filter(r => r.id !== me && r.role !== 'owner');
   const items = [
     { id: 'dashboard', label: 'Dashboard', icon: 'home', kbd: 'G D' },
     { id: 'phone', label: 'Phone', icon: 'phone_call', kbd: 'G F' },
@@ -108,19 +111,58 @@ const Sidebar = ({ current, onNav, counts = {}, me, onSwitchMe }) => {
         ))}
       </div>
 
+      {isOwner && !viewingAs && workers.length > 0 && (
+        <div className="nav-section">
+          <div className="nav-label">View as</div>
+          {workers.map(w => (
+            <button key={w.id} className="nav-item" onClick={() => onSetViewingAs(w.id)} title={`Step into ${w.name}'s view`}>
+              <div className="avatar" style={{width:18,height:18,fontSize:9}}>{w.initials}</div>
+              <span className="ellipsis">{w.name}</span>
+              <Icon name="arrow_right" size={12} style={{color:'var(--text-subtle)'}}/>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="sidebar-footer">
-        <button className="hstack gap-3" style={{flex:1,minWidth:0,padding:0,background:'none',textAlign:'left'}} onClick={onSwitchMe} title={`Switch role (currently ${rep.role})`}>
-          <div className="avatar">{rep.initials}</div>
+        <div className="hstack gap-3" style={{flex:1,minWidth:0}}>
+          <div className="avatar">{(viewedRep || realRep).initials}</div>
           <div className="vstack" style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:12,fontWeight:500}} className="ellipsis">{rep.name}</div>
-            <div style={{fontSize:11}} className="subtle hstack gap-1"><Icon name="swap" size={10}/>{rep.role}</div>
+            <div style={{fontSize:12,fontWeight:500}} className="ellipsis">{(viewedRep || realRep).name}</div>
+            <div style={{fontSize:11}} className="subtle ellipsis">
+              {viewedRep ? `signed in as ${realRep.name}` : realRep.role}
+            </div>
           </div>
+        </div>
+        <button className="iconbtn" onClick={onSignOut} title="Sign out">
+          <Icon name="phone_off" size={15}/>
         </button>
         <button className="iconbtn" onClick={() => onNav('settings')} title="Settings">
           <Icon name="settings" size={15}/>
         </button>
       </div>
     </aside>
+  );
+};
+
+// Owner-only banner shown while an owner is "viewing as" a worker.
+const ViewingAsBanner = ({ rep, onReturn }) => {
+  if (!rep) return null;
+  return (
+    <div className="hstack gap-3" style={{
+      padding:'8px 18px',
+      background:'var(--accent-soft)',
+      borderBottom:'1px solid var(--border)',
+      fontSize:12.5,
+      color:'var(--accent)',
+    }}>
+      <Icon name="user" size={13}/>
+      <span style={{flex:1}}>Viewing as <b>{rep.name}</b> — actions you take are still recorded as admin.</span>
+      <button className="btn btn-sm" onClick={onReturn}>
+        <Icon name="arrow_right" size={11} style={{transform:'rotate(180deg)'}}/>
+        Return to admin
+      </button>
+    </div>
   );
 };
 
@@ -389,4 +431,4 @@ const ActionsMenu = ({ actions, align = 'right', iconSize = 14, label }) => {
   );
 };
 
-Object.assign(window, { Icon, Sidebar, TopBar, StagePill, Avatar, Toast, NewLeadModal, LeadFormModal, ImportLeads, ActionsMenu });
+Object.assign(window, { Icon, Sidebar, ViewingAsBanner, TopBar, StagePill, Avatar, Toast, NewLeadModal, LeadFormModal, ImportLeads, ActionsMenu });
