@@ -1,0 +1,14 @@
+{
+  "name": "skylar-caller-crm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Skylar Partners cold-calling CRM — static React prototype",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "twilio": "^6.0.0"
+  }
+}

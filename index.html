@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Skylar Caller CRM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Inter,sans-serif' font-size='18' font-weight='700' fill='white'%3ES%3C/text%3E%3C/svg%3E"/>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@twilio/voice-sdk@2.11.3/dist/twilio.min.js" crossorigin="anonymous"></script>
+
+<script src="data.js"></script>
+<script type="text/babel" src="components.jsx"></script>
+<script type="text/babel" src="dashboard.jsx"></script>
+<script type="text/babel" src="lead-detail.jsx"></script>
+<script type="text/babel" src="leads-kanban.jsx"></script>
+<script type="text/babel" src="calendar-calls.jsx"></script>
+<script type="text/babel" src="dialer-modals.jsx"></script>
+<script type="text/babel" src="phone.jsx"></script>
+
+<script type="text/babel">
+const ACCENTS = {
+  blue:   { color: '#2563eb', hover: '#1d4ed8', soft: '#eff6ff', ring: 'rgba(37,99,235,0.2)' },
+  green:  { color: '#16a34a', hover: '#15803d', soft: '#f0fdf4', ring: 'rgba(22,163,74,0.2)' },
+  violet: { color: '#7c3aed', hover: '#6d28d9', soft: '#f5f3ff', ring: 'rgba(124,58,237,0.2)' },
+  amber:  { color: '#d97706', hover: '#b45309', soft: '#fffbeb', ring: 'rgba(217,119,6,0.2)' },
+  slate:  { color: '#111113', hover: '#000',    soft: '#f4f4f5', ring: 'rgba(0,0,0,0.15)' },
+};
+
+const DEFAULT_TWEAKS = {
+  accent: 'blue',
+  density: 'airy',
+  theme: 'light',
+  leadVariant: 'focused',
+};
+
+function applyTweaks(t) {
+  const root = document.documentElement;
+  const a = ACCENTS[t.accent] || ACCENTS.blue;
+  root.style.setProperty('--accent', a.color);
+  root.style.setProperty('--accent-hover', a.hover);
+  root.style.setProperty('--accent-soft', a.soft);
+  root.style.setProperty('--accent-ring', a.ring);
+  root.setAttribute('data-theme', t.theme);
+  root.setAttribute('data-density', t.density);
+}
+
+function loadTweaks() {
+  try {
+    const raw = localStorage.getItem('skylar:tweaks');
+    if (!raw) return DEFAULT_TWEAKS;
+    return { ...DEFAULT_TWEAKS, ...JSON.parse(raw) };
+  } catch { return DEFAULT_TWEAKS; }
+}
+
+function App() {
+  const [route, setRoute] = React.useState(() => localStorage.getItem('route') || 'dashboard');
+  const [leadId, setLeadId] = React.useState(() => localStorage.getItem('leadId') || null);
+  const [callingLead, setCallingLead] = React.useState(null);
+  const [showLog, setShowLog] = React.useState(null);
+  const [showPalette, setShowPalette] = React.useState(false);
+  const [showNewLead, setShowNewLead] = React.useState(false);
+  const [showTweaks, setShowTweaks] = React.useState(false);
+  const [smsLead, setSmsLead] = React.useState(null);
+  const [editLead, setEditLead] = React.useState(null);
+  const [toast, setToast] = React.useState(null);
+  const [tweaks, setTweaks] = React.useState(loadTweaks);
+  const [me, setMe] = React.useState(() => store.me);
+  const [version, setVersion] = React.useState(0); // bump on every store write to re-render
+
+  // Re-render on store changes
+  React.useEffect(() => {
+    const handler = () => { setVersion(v => v + 1); setMe(store.me); };
+    window.addEventListener('skylar-change', handler);
+    return () => window.removeEventListener('skylar-change', handler);
+  }, []);
+
+  // Pull recordings from Twilio every 20s and attach to matching call logs by
+  // callSid. Works on localhost AND on Vercel (no persistent connection needed).
+  React.useEffect(() => {
+    let lastPoll = Number(localStorage.getItem('skylar:lastRecPoll')) || (Date.now() - 2 * 3600 * 1000);
+    let stopped = false;
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        const r = await fetch(`/api/recordings-recent?since=${lastPoll}`);
+        if (r.ok) {
+          const { recordings, now } = await r.json();
+          let attached = 0;
+          for (const rec of (recordings || [])) {
+            const before = CALL_LOGS.find(c => c.recordingSid === rec.sid);
+            if (before) continue;
+            const target = CALL_LOGS.find(c => c.callSid === rec.callSid && !c.recordingSid);
+            if (target) {
+              store.attachRecording(target.leadId, {
+                recordingSid: rec.sid,
+                callSid: rec.callSid,
+                url: rec.url,
+                duration: rec.duration,
+              });
+              attached++;
+            }
+          }
+          if (attached > 0) setToast(`${attached} recording${attached === 1 ? '' : 's'} ready`);
+          if (now) { lastPoll = now; localStorage.setItem('skylar:lastRecPoll', String(now)); }
+        }
+      } catch { /* offline or Twilio not configured — fine */ }
+    };
+    poll(); // immediate on mount
+    const id = setInterval(poll, 20000);
+    return () => { stopped = true; clearInterval(id); };
+  }, []);
+
+  React.useEffect(() => { localStorage.setItem('route', route); }, [route]);
+  React.useEffect(() => { if (leadId) localStorage.setItem('leadId', leadId); }, [leadId]);
+  React.useEffect(() => { applyTweaks(tweaks); localStorage.setItem('skylar:tweaks', JSON.stringify(tweaks)); }, [tweaks]);
+
+  const updateTweak = (k, v) => setTweaks(t => ({ ...t, [k]: v }));
+
+  // Keyboard shortcuts
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+        if (e.key === 'Escape') e.target.blur();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setShowPalette(true); return; }
+      if (e.key === '/') { e.preventDefault(); document.querySelector('.search-input input')?.focus(); return; }
+      if (e.key === 'g') { window.__gPressed = true; setTimeout(() => window.__gPressed = false, 700); return; }
+      if (window.__gPressed) {
+        if (e.key === 'd') { setRoute('dashboard'); window.__gPressed = false; }
+        if (e.key === 'l') { setRoute('leads'); window.__gPressed = false; }
+        if (e.key === 'p') { setRoute('pipeline'); window.__gPressed = false; }
+        if (e.key === 'c') { setRoute('calendar'); window.__gPressed = false; }
+        if (e.key === 't') { setRoute('tasks'); window.__gPressed = false; }
+        if (e.key === 'h') { setRoute('calls'); window.__gPressed = false; }
+        if (e.key === 'f') { setRoute('phone'); window.__gPressed = false; }
+        return;
+      }
+      if (e.key === 'c' && route === 'lead' && leadId) { setCallingLead(LEAD_OF[leadId]); }
+      if (e.key === 'n') { e.preventDefault(); setShowNewLead(true); }
+      if (e.key === 'Escape') { setShowPalette(false); setCallingLead(null); setShowLog(null); setShowNewLead(false); setShowTweaks(false); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [route, leadId]);
+
+  const openLead = (id) => { setLeadId(id); setRoute('lead'); };
+  const goTo = (r) => setRoute(r);
+  const startCall = (l) => setCallingLead(l);
+  const advanceToNext = () => {
+    // pick the next callable lead in the queue
+    const queue = LEADS.filter(l => ['new','attempted','followup','contacted','interested'].includes(l.stage));
+    const idx = queue.findIndex(l => l.id === callingLead?.id);
+    const next = queue[idx + 1] || queue[0];
+    if (next && next.id !== callingLead?.id) {
+      setLeadId(next.id);
+      setTimeout(() => setCallingLead(next), 200);
+    }
+  };
+
+  const counts = {
+    leads: LEADS.length,
+    tasks: TASKS.filter(t => !t.done).length,
+    dueToday: TASKS.filter(t => !t.done && isToday(t.due)).length,
+    newLeads: LEADS.filter(l => l.stage === 'new').length,
+    followups: LEADS.filter(l => l.stage === 'followup').length,
+  };
+
+  const crumbs = {
+    dashboard: ['Dashboard'],
+    phone: ['Phone'],
+    leads: ['Leads'],
+    pipeline: ['Pipeline'],
+    calendar: ['Schedule'],
+    tasks: ['Schedule', 'Tasks'],
+    calls: ['Call logs'],
+    lead: ['Leads', leadId ? LEAD_OF[leadId]?.fullName || '' : ''],
+    settings: ['Settings'],
+  };
+
+  const navFor = { lead: 'leads', tasks: 'tasks', calendar: 'calendar', calls: 'calls', pipeline: 'pipeline', leads: 'leads', dashboard: 'dashboard', phone: 'phone', settings: 'settings' };
+
+  const switchMe = () => {
+    const next = store.me === 'u1' ? 'u2' : 'u1';
+    store.setMe(next);
+    setToast(`Switched to ${REP_OF[next].name} (${REP_OF[next].role})`);
+  };
+
+  const onImport = () => {
+    // trigger hidden file input dynamically
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,text/csv';
+    input.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const rows = parseCSV(String(reader.result || ''));
+        if (!rows.length) { setToast('CSV is empty'); return; }
+        const count = store.importLeads(rows);
+        setToast(`Imported ${count} lead${count === 1 ? '' : 's'}`);
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
+
+  // Manager view uses DashboardManager; caller view uses DashboardCaller.
+  const isManager = me === 'u2';
+
+  // safety: the stored leadId might no longer exist (e.g., after CSV import)
+  const activeLead = leadId && LEAD_OF[leadId] ? LEAD_OF[leadId] : null;
+
+  return (
+    <div className="app">
+      <Sidebar current={navFor[route]} onNav={goTo} counts={counts} me={me} onSwitchMe={switchMe}/>
+      <div className="main">
+        <TopBar
+          crumb={crumbs[route] || []}
+          onNewLead={() => setShowNewLead(true)}
+          onImport={onImport}
+          actions={
+            <>
+              <TwilioStatusPill/>
+              <button className="btn" onClick={() => setShowTweaks(s => !s)} title="Tweaks">
+                <Icon name="sliders" size={13}/>
+              </button>
+              <button className="btn" onClick={() => setShowPalette(true)}>
+                <Icon name="search" size={13}/>
+                <span className="kbd">⌘K</span>
+              </button>
+            </>
+          }/>
+        {route === 'dashboard' && (isManager
+          ? <DashboardManager onNav={goTo} onOpenLead={openLead}/>
+          : <DashboardCaller onNav={goTo} onCall={startCall} onOpenLead={openLead}/>)}
+        {route === 'phone' && <PhonePage onCall={startCall} onSMS={(l) => setSmsLead(l)} onOpenLead={(id) => id === '_calls' ? setRoute('calls') : openLead(id)}/>}
+        {route === 'leads' && <LeadsTable onOpenLead={openLead} onCall={startCall} onEdit={(l) => setEditLead(l)} onSMS={(l) => setSmsLead(l)}/>}
+        {route === 'pipeline' && <KanbanBoard onOpenLead={openLead} onCall={startCall} view="kanban" setView={(v)=>setRoute(v==='table'?'leads':'pipeline')} filter="all" setFilter={()=>{}}/>}
+        {route === 'calendar' && <CalendarTasks onOpenLead={openLead}/>}
+        {route === 'tasks' && <CalendarTasks onOpenLead={openLead}/>}
+        {route === 'calls' && <CallLogsPage onOpenLead={openLead}/>}
+        {route === 'lead' && activeLead && (tweaks.leadVariant === 'timeline'
+          ? <LeadDetailB lead={activeLead} onCall={startCall} onBack={() => setRoute('leads')} onQuickLog={() => setShowLog(activeLead)} onSMS={() => setSmsLead(activeLead)} onEdit={() => setEditLead(activeLead)}/>
+          : <LeadDetailA lead={activeLead} onCall={startCall} onBack={() => setRoute('leads')} onQuickLog={() => setShowLog(activeLead)} onSMS={() => setSmsLead(activeLead)} onEdit={() => setEditLead(activeLead)}/>)}
+        {route === 'lead' && !activeLead && (
+          <div className="page">
+            <div className="card subtle" style={{padding:32,textAlign:'center'}}>
+              <div style={{fontSize:13}}>That lead is no longer available.</div>
+              <button className="btn btn-sm" style={{marginTop:12}} onClick={() => setRoute('leads')}>Back to leads</button>
+            </div>
+          </div>
+        )}
+        {route === 'settings' && <SettingsPage/>}
+      </div>
+
+      {callingLead && <DialerPanel
+        lead={callingLead}
+        onClose={() => setCallingLead(null)}
+        onLogged={() => setToast('Call logged')}
+        onAdvance={advanceToNext}/>}
+      {showLog && <QuickLogModal lead={showLog} onClose={() => setShowLog(null)} onSaved={() => { setShowLog(null); setToast('Call logged'); }}/>}
+      {showPalette && <CommandPalette onClose={() => setShowPalette(false)} onNav={goTo} onOpenLead={openLead}/>}
+      {showNewLead && <LeadFormModal onClose={() => setShowNewLead(false)} onCreated={(l) => { setToast(`Added ${l.fullName}`); openLead(l.id); }}/>}
+      {editLead && <LeadFormModal lead={editLead} onClose={() => setEditLead(null)} onUpdated={() => setToast('Lead updated')}/>}
+      {smsLead && <SMSModal lead={smsLead} onClose={() => setSmsLead(null)} onSent={() => setToast('SMS sent')}/>}
+      <Toast message={toast} onClose={() => setToast(null)}/>
+
+      {showTweaks && <TweaksPanel tweaks={tweaks} onChange={updateTweak} onClose={() => setShowTweaks(false)} onReset={() => { store.resetDemo(); setToast('Demo data reset'); }}/>}
+    </div>
+  );
+}
+
+const SettingsPage = () => (
+  <div className="page">
+    <div className="page-header">
+      <div>
+        <div className="page-header-title">Settings</div>
+        <div className="page-header-sub">Workspace preferences live in the Tweaks panel (top-right)</div>
+      </div>
+    </div>
+    <div className="card subtle" style={{padding:32,textAlign:'center'}}>
+      <Icon name="settings" size={20}/>
+      <div style={{fontSize:13,marginTop:8}} className="subtle">Full settings UI is out of scope for v1</div>
+    </div>
+  </div>
+);
+
+const TweaksPanel = ({ tweaks, onChange, onClose, onReset }) => (
+  <div className="tweaks">
+    <div className="tweaks-head">
+      <div style={{fontWeight:600,fontSize:13}}>Tweaks</div>
+      <button className="iconbtn" onClick={onClose}><Icon name="close" size={13}/></button>
+    </div>
+    <div className="tweaks-body">
+      <div className="tweak-row">
+        <div className="tweak-label">Accent color</div>
+        <div className="swatches">
+          {Object.entries(ACCENTS).map(([k, v]) => (
+            <button key={k} className={'swatch ' + (tweaks.accent === k ? 'active' : '')}
+              style={{background: v.color}} onClick={() => onChange('accent', k)} title={k}/>
+          ))}
+        </div>
+      </div>
+      <div className="tweak-row">
+        <div className="tweak-label">Theme</div>
+        <div className="seg">
+          <button className={tweaks.theme === 'light' ? 'active' : ''} onClick={() => onChange('theme', 'light')}><Icon name="sun" size={11}/> Light</button>
+          <button className={tweaks.theme === 'dark' ? 'active' : ''} onClick={() => onChange('theme', 'dark')}><Icon name="moon" size={11}/> Dark</button>
+        </div>
+      </div>
+      <div className="tweak-row">
+        <div className="tweak-label">Density</div>
+        <div className="seg">
+          <button className={tweaks.density === 'airy' ? 'active' : ''} onClick={() => onChange('density', 'airy')}>Airy</button>
+          <button className={tweaks.density === 'compact' ? 'active' : ''} onClick={() => onChange('density', 'compact')}>Compact</button>
+        </div>
+      </div>
+      <div className="tweak-row">
+        <div className="tweak-label">Lead detail</div>
+        <div className="seg">
+          <button className={tweaks.leadVariant === 'focused' ? 'active' : ''} onClick={() => onChange('leadVariant', 'focused')}>Focused</button>
+          <button className={tweaks.leadVariant === 'timeline' ? 'active' : ''} onClick={() => onChange('leadVariant', 'timeline')}>Timeline</button>
+        </div>
+      </div>
+      <div className="tweak-row">
+        <div className="tweak-label">Data</div>
+        <div className="hstack gap-2">
+          <button className="btn btn-sm" onClick={onReset}>Reset demo data</button>
+          <button className="btn btn-sm" onClick={() => { if (confirm('Wipe all leads, calls, tasks, notes, SMS?')) store.clearAll(); }}>Clear all</button>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
