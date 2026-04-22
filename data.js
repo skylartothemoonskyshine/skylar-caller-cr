@@ -573,9 +573,31 @@ const store = {
     if (lead) {
       lead.lastCallAt = entry.at;
       lead.callAttempts = (lead.callAttempts || 0) + 1;
-      sb.from('leads')
-        .update({ last_call_at: entry.at.toISOString(), call_attempts: lead.callAttempts })
-        .eq('id', lead.id)
+
+      // Auto-advance the lead's stage based on the disposition.
+      // Only moves FORWARD: a "No answer" on a lead already "Booked" won't
+      // demote it. 'won' and 'lost' are terminal — never overwritten.
+      const STAGE_ORDER = { new:0, attempted:1, contacted:2, followup:3, interested:4, booked:5, won:6 };
+      const TARGET = {
+        'Connected':      'contacted',
+        'No answer':      'attempted',
+        'Voicemail':      'attempted',
+        'Gatekeeper':     'attempted',
+        'Wrong number':   'lost',
+        'Not interested': 'lost',
+      };
+      const target = TARGET[disposition];
+      let stageChanged = false;
+      if (target && lead.stage !== 'won' && lead.stage !== 'lost') {
+        if (target === 'lost' || (STAGE_ORDER[target] ?? 0) > (STAGE_ORDER[lead.stage] ?? 0)) {
+          lead.stage = target;
+          stageChanged = true;
+        }
+      }
+
+      const leadPatch = { last_call_at: entry.at.toISOString(), call_attempts: lead.callAttempts };
+      if (stageChanged) leadPatch.stage = lead.stage;
+      sb.from('leads').update(leadPatch).eq('id', lead.id)
         .then(({ error }) => logErr('lead-after-call update', error));
     }
     sb.from('call_logs').insert(callLogToRow(entry)).then(({ error }) => logErr('addCallLog', error));
