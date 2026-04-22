@@ -1,8 +1,10 @@
 // POST /api/recording — Twilio posts here when a recording completes.
-// We log it to the server console and push it to any connected browser via
-// a lightweight event stream (GET /api/recording/stream). In the static
-// prototype we don't have a DB, so recordings are discoverable by polling
-// this endpoint for the last few completed recordings.
+// Writes the recording onto the matching call_logs row (by call_sid). If the
+// browser hasn't saved its log yet, inserts a minimal stub row that the
+// browser-side addCallLog will later see via realtime / refresh.
+// Also keeps the SSE stream so already-connected browsers update instantly.
+
+const { admin, isConfigured: sbConfigured } = require('../lib/supabase');
 
 const subscribers = new Set();
 const recent = []; // [{ leadId, recordingSid, url, duration, at }]
@@ -12,6 +14,40 @@ function broadcast(evt) {
   for (const res of subscribers) {
     try { res.write(line); } catch {}
   }
+}
+
+async function persist(evt) {
+  if (!sbConfigured()) {
+    console.warn('[/api/recording] Supabase not configured — skipping DB write');
+    return;
+  }
+  if (!evt.callSid) {
+    console.warn('[/api/recording] no CallSid on event — cannot match call_log');
+    return;
+  }
+  const sb = admin();
+  const patch = {
+    recording_sid: evt.recordingSid,
+    recording_url: evt.url,
+  };
+  if (evt.duration) patch.duration = String(evt.duration);
+
+  const upd = await sb.from('call_logs').update(patch).eq('call_sid', evt.callSid).select('id');
+  if (upd.error) {
+    console.error('[/api/recording] update call_logs failed', upd.error);
+    return;
+  }
+  if (upd.data && upd.data.length) return;
+
+  const ins = await sb.from('call_logs').insert({
+    call_sid: evt.callSid,
+    recording_sid: evt.recordingSid,
+    recording_url: evt.url,
+    duration: evt.duration ? String(evt.duration) : null,
+    lead_id: evt.leadId || null,
+    at: evt.at,
+  });
+  if (ins.error) console.error('[/api/recording] insert call_logs stub failed', ins.error);
 }
 
 async function handler(req, res) {
@@ -48,6 +84,7 @@ async function handler(req, res) {
       if (recent.length > 50) recent.shift();
       broadcast(evt);
       console.log('[/api/recording] completed:', evt.recordingSid, evt.url);
+      await persist(evt);
     }
     res.statusCode = 200;
     res.setHeader('content-type', 'text/plain');
