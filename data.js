@@ -157,7 +157,11 @@ function callLogFromRow(r) {
     outcome: r.outcome || '—',
     callSid: r.call_sid,
     recordingSid: r.recording_sid,
-    recordingUrl: r.recording_url,
+    recordingUrl: r.recording_sid
+      ? `/api/recording-play?sid=${encodeURIComponent(r.recording_sid)}`
+      : r.call_sid
+        ? `/api/recording-play?callSid=${encodeURIComponent(r.call_sid)}`
+        : null,
   };
 }
 function callLogToRow(c) {
