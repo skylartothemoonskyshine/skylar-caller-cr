@@ -36,6 +36,8 @@ const DialerPanel = ({ lead, onClose, onLogged, onAdvance }) => {
   const [callState, setCallState] = React.useState('preparing'); // preparing | dialing | connected | disconnected | failed | unconfigured
   const [muted, setMuted] = React.useState(false);
   const [showLog, setShowLog] = React.useState(false);
+  const [showKeypad, setShowKeypad] = React.useState(false);
+  const [digitsSent, setDigitsSent] = React.useState('');
   const [err, setErr] = React.useState(null);
   const [, setTick] = React.useState(0); // re-render once a second while connected
 
@@ -123,6 +125,22 @@ const DialerPanel = ({ lead, onClose, onLogged, onAdvance }) => {
     try { call.mute(next); setMuted(next); } catch (e) { console.error(e); }
   };
 
+  const sendDigit = (d) => {
+    if (!call || callState !== 'connected') return;
+    try { call.sendDigits(d); setDigitsSent(s => (s + d).slice(-16)); } catch (e) { console.error(e); }
+  };
+
+  React.useEffect(() => {
+    if (callState !== 'connected' || !showKeypad) return;
+    const onKey = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (/^[0-9*#]$/.test(e.key)) { e.preventDefault(); sendDigit(e.key); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line
+  }, [callState, showKeypad, call]);
+
   const hangup = () => {
     try { call?.disconnect(); } catch {}
     setShowLog(true);
@@ -194,13 +212,32 @@ const DialerPanel = ({ lead, onClose, onLogged, onAdvance }) => {
             <Icon name={muted ? 'mic_off' : 'mic'} size={13}/>
             {muted ? 'Unmute' : 'Mute'}
           </button>
+          <button className="btn" onClick={() => setShowKeypad(v => !v)} disabled={callState !== 'connected'}
+                  style={{opacity: callState === 'connected' ? 1 : 0.5, background: showKeypad ? 'var(--surface-2)' : undefined}}
+                  title="Send touch-tones (IVR)">
+            <Icon name="grid" size={13}/> Keypad
+          </button>
           <button className="btn" onClick={() => setShowLog(true)}>
             <Icon name="note" size={13}/> Log
           </button>
-          <a className="btn" href={`tel:${normalizePhone(lead.phone)}`} title="Fallback: OS dialer">
-            <Icon name="phone" size={13}/> OS
-          </a>
         </div>
+
+        {showKeypad && (
+          <div style={{marginTop:12,padding:'10px 12px',background:'var(--surface-2)',borderRadius:8}}>
+            <div className="hstack" style={{justifyContent:'space-between',marginBottom:8}}>
+              <div className="subtle" style={{fontSize:11}}>Tap or type 0-9 * #</div>
+              <div className="mono" style={{fontSize:12,letterSpacing:1}}>{digitsSent || '—'}</div>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3, 1fr)',gap:6}}>
+              {['1','2','3','4','5','6','7','8','9','*','0','#'].map(d => (
+                <button key={d} onClick={() => sendDigit(d)}
+                        style={{padding:'12px 0',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:6,fontSize:16,fontWeight:600,cursor:'pointer',fontFamily:'JetBrains Mono, monospace'}}>
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <button className="dialer-hangup" onClick={hangup}>
           <Icon name="phone_off" size={14}/>
