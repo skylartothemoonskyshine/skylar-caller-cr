@@ -497,8 +497,9 @@ const store = {
     sb.from('call_logs').update(callLogToRow(c)).eq('id', id).then(({ error }) => logErr('updateCallLog', error));
   },
 
-  async importLeads(rows) {
-    const rep = this.currentRep();
+  async importLeads(rows, { ownerId } = {}) {
+    const assignedId = ownerId || this.me || null;
+    const rep = REP_OF[assignedId] || this.currentRep();
     const mapped = rows.map((row) => {
       const title = (row.title || '').trim();
       const business = (row.business || row.company || title).trim();
@@ -530,7 +531,7 @@ const store = {
         reviews,
         mapsUrl,
         stage: 'new',
-        ownerId: this.me || null,
+        ownerId: assignedId,
         ownerName: rep?.name || '',
         ownerInitials: rep?.initials || '',
         source: row.source || (title ? 'Google Maps' : 'Imported'),
@@ -718,6 +719,31 @@ const store = {
       .then(({ error }) => logErr('setTask upsert', error));
     sb.from('leads').update({ next_followup_at: due.toISOString() }).eq('id', leadId)
       .then(({ error }) => logErr('setTask lead update', error));
+  },
+
+  async bulkAssign(leadIds, ownerId) {
+    if (!leadIds?.length || !ownerId) return 0;
+    const rep = REP_OF[ownerId];
+    if (!rep) return 0;
+    const idSet = new Set(leadIds);
+    for (const l of this.leads) {
+      if (idSet.has(l.id)) {
+        l.ownerId = ownerId;
+        l.ownerName = rep.name;
+        l.ownerInitials = rep.initials;
+      }
+    }
+    this.dirty();
+    const CHUNK = 500;
+    let updated = 0;
+    const ids = [...idSet];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      const { error } = await sb.from('leads').update({ owner_id: ownerId }).in('id', slice);
+      logErr('bulkAssign', error);
+      if (!error) updated += slice.length;
+    }
+    return updated;
   },
 
   addEvent({ title, due, leadId = null }) {

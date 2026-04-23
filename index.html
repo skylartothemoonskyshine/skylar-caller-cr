@@ -197,24 +197,8 @@ function App() {
     if (confirm('Sign out?')) store.signOut();
   };
 
-  const onImport = () => {
-    // trigger hidden file input dynamically
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.csv,text/csv';
-    input.onchange = (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const rows = parseCSV(String(reader.result || ''));
-        if (!rows.length) { setToast('CSV is empty'); return; }
-        const count = store.importLeads(rows);
-        setToast(`Imported ${count} lead${count === 1 ? '' : 's'}`);
-      };
-      reader.readAsText(file);
-    };
-    input.click();
+  const onImportDone = (count) => {
+    setToast(`Imported ${count} lead${count === 1 ? '' : 's'}`);
   };
 
   // Owner gets the manager overview when NOT viewing-as; while viewing-as (or for
@@ -242,7 +226,7 @@ function App() {
         <TopBar
           crumb={crumbs[route] || []}
           onNewLead={() => setShowNewLead(true)}
-          onImport={onImport}
+          onImportDone={onImportDone}
           actions={
             <>
               <TwilioStatusPill/>

@@ -167,7 +167,7 @@ const ViewingAsBanner = ({ rep, onReturn }) => {
 };
 
 // Topbar
-const TopBar = ({ crumb, actions, onSearch, onNewLead, onImport }) => {
+const TopBar = ({ crumb, actions, onSearch, onNewLead, onImportDone }) => {
   return (
     <div className="topbar">
       <div className="hstack gap-2">
@@ -186,12 +186,7 @@ const TopBar = ({ crumb, actions, onSearch, onNewLead, onImport }) => {
           <span className="kbd">/</span>
         </div>
         {actions}
-        {onImport && (
-          <button className="btn" onClick={onImport} title="Import leads from CSV">
-            <Icon name="upload" size={13}/>
-            Import
-          </button>
-        )}
+        {onImportDone && <ImportLeads onDone={onImportDone}/>}
         <button className="btn btn-primary" onClick={onNewLead}>
           <Icon name="plus" size={14}/>
           New lead
@@ -376,6 +371,10 @@ const NewLeadModal = LeadFormModal;
 // Import CSV (hidden file input triggered by a ref)
 const ImportLeads = ({ onDone }) => {
   const ref = React.useRef(null);
+  const [pending, setPending] = React.useState(null); // { rows, fileName }
+  const [ownerId, setOwnerId] = React.useState(store.me || '');
+  const [busy, setBusy] = React.useState(false);
+
   const open = () => ref.current?.click();
   const onFile = (e) => {
     const file = e.target.files?.[0];
@@ -384,16 +383,69 @@ const ImportLeads = ({ onDone }) => {
     reader.onload = () => {
       const text = String(reader.result || '');
       const rows = parseCSV(text);
-      const count = store.importLeads(rows);
-      onDone && onDone(count);
+      setPending({ rows, fileName: file.name });
+      setOwnerId(store.me || REPS[0]?.id || '');
     };
     reader.readAsText(file);
     e.target.value = '';
   };
+
+  const confirm = async () => {
+    if (!pending || busy) return;
+    setBusy(true);
+    const count = await store.importLeads(pending.rows, { ownerId });
+    setBusy(false);
+    setPending(null);
+    onDone && onDone(count);
+  };
+
   return (
     <>
       <input ref={ref} type="file" accept=".csv,text/csv" style={{display:'none'}} onChange={onFile}/>
       <button className="btn" onClick={open}><Icon name="upload" size={13}/> Import</button>
+      {pending && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && !busy && setPending(null)}>
+          <div className="modal" style={{width:460}}>
+            <div className="modal-header">
+              <div>
+                <div style={{fontWeight:600,fontSize:14}}>Import leads</div>
+                <div className="subtle" style={{fontSize:12,marginTop:2}}>{pending.rows.length} rows from <span className="mono">{pending.fileName}</span></div>
+              </div>
+              <button className="iconbtn" onClick={() => !busy && setPending(null)}><Icon name="close" size={14}/></button>
+            </div>
+            <div className="modal-body">
+              <div className="tweak-row">
+                <div className="tweak-label">Assign to</div>
+                <div className="vstack gap-1">
+                  {REPS.map(r => (
+                    <label key={r.id} className="hstack gap-2" style={{
+                      padding:'8px 10px',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',
+                      background: ownerId === r.id ? 'var(--surface-2)' : 'var(--surface)',
+                      borderColor: ownerId === r.id ? 'var(--text)' : 'var(--border)'
+                    }}>
+                      <input type="radio" name="import-owner" checked={ownerId === r.id} onChange={() => setOwnerId(r.id)} style={{margin:0}}/>
+                      <Avatar initials={r.initials} size={22}/>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:500,fontSize:13}}>{r.name}{r.id === store.me ? ' (you)' : ''}</div>
+                        <div className="subtle" style={{fontSize:11.5,textTransform:'capitalize'}}>{r.role}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="subtle" style={{fontSize:11.5,marginTop:10}}>
+                All {pending.rows.length} leads will be assigned to the selected rep. They won't mix with other reps' leads.
+              </div>
+            </div>
+            <div className="modal-footer hstack gap-2" style={{justifyContent:'flex-end'}}>
+              <button className="btn" onClick={() => setPending(null)} disabled={busy}>Cancel</button>
+              <button className="btn btn-primary" onClick={confirm} disabled={busy || !ownerId}>
+                {busy ? 'Importing…' : `Import ${pending.rows.length} leads`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

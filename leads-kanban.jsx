@@ -1,8 +1,98 @@
 // Leads table + Kanban pipeline
 
+const BulkAssignModal = ({ leads, onClose }) => {
+  const callers = REPS.filter(r => r.role !== 'owner');
+  const [mode, setMode] = React.useState('single'); // 'single' | 'split'
+  const [ownerId, setOwnerId] = React.useState(callers[0]?.id || REPS[0]?.id || '');
+  const [splitA, setSplitA] = React.useState(callers[0]?.id || '');
+  const [splitB, setSplitB] = React.useState(callers[1]?.id || '');
+  const [busy, setBusy] = React.useState(false);
+
+  const apply = async () => {
+    if (busy) return;
+    setBusy(true);
+    if (mode === 'single') {
+      await store.bulkAssign(leads.map(l => l.id), ownerId);
+    } else {
+      const a = [], b = [];
+      leads.forEach((l, i) => (i % 2 === 0 ? a : b).push(l.id));
+      await Promise.all([
+        store.bulkAssign(a, splitA),
+        store.bulkAssign(b, splitB),
+      ]);
+    }
+    setBusy(false);
+    onClose();
+  };
+
+  const canApply = mode === 'single' ? !!ownerId : !!splitA && !!splitB && splitA !== splitB;
+
+  return (
+    <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && !busy && onClose()}>
+      <div className="modal" style={{width:480}}>
+        <div className="modal-header">
+          <div>
+            <div style={{fontWeight:600,fontSize:14}}>Assign leads</div>
+            <div className="subtle" style={{fontSize:12,marginTop:2}}>{leads.length} filtered lead{leads.length === 1 ? '' : 's'}</div>
+          </div>
+          <button className="iconbtn" onClick={() => !busy && onClose()}><Icon name="close" size={14}/></button>
+        </div>
+        <div className="modal-body">
+          <div className="seg" style={{marginBottom:16}}>
+            <button className={mode==='single'?'active':''} onClick={()=>setMode('single')}>Single rep</button>
+            <button className={mode==='split'?'active':''} onClick={()=>setMode('split')} disabled={callers.length < 2}>Split 50/50</button>
+          </div>
+
+          {mode === 'single' ? (
+            <div className="vstack gap-1">
+              {REPS.map(r => (
+                <label key={r.id} className="hstack gap-2" style={{
+                  padding:'8px 10px',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',
+                  background: ownerId === r.id ? 'var(--surface-2)' : 'var(--surface)',
+                  borderColor: ownerId === r.id ? 'var(--text)' : 'var(--border)'
+                }}>
+                  <input type="radio" name="bulk-owner" checked={ownerId === r.id} onChange={() => setOwnerId(r.id)} style={{margin:0}}/>
+                  <Avatar initials={r.initials} size={22}/>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:500,fontSize:13}}>{r.name}</div>
+                    <div className="subtle" style={{fontSize:11.5,textTransform:'capitalize'}}>{r.role}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+              <div className="tweak-row">
+                <div className="tweak-label">Half A ({Math.ceil(leads.length / 2)})</div>
+                <select className="input" value={splitA} onChange={e => setSplitA(e.target.value)}>
+                  {callers.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              </div>
+              <div className="tweak-row">
+                <div className="tweak-label">Half B ({Math.floor(leads.length / 2)})</div>
+                <select className="input" value={splitB} onChange={e => setSplitB(e.target.value)}>
+                  {callers.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              </div>
+              {splitA === splitB && <div className="subtle" style={{gridColumn:'1/-1',fontSize:11.5,color:'var(--red)'}}>Pick two different reps.</div>}
+            </div>
+          )}
+        </div>
+        <div className="modal-footer hstack gap-2" style={{justifyContent:'flex-end'}}>
+          <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="btn btn-primary" onClick={apply} disabled={busy || !canApply}>
+            {busy ? 'Assigning…' : `Assign ${leads.length} lead${leads.length === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
   const [filter, setFilter] = React.useState('all');
   const [view, setView] = React.useState(localStorage.getItem('leadsView') || 'table');
+  const [showAssign, setShowAssign] = React.useState(false);
   React.useEffect(() => { localStorage.setItem('leadsView', view); }, [view]);
 
   const scoped = store.visibleLeads();
@@ -43,9 +133,18 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
         <button className="btn btn-sm"><Icon name="map_pin" size={12}/> Location</button>
         <button className="btn btn-sm"><Icon name="flame" size={12}/> Niche</button>
         <div style={{marginLeft:'auto'}} className="hstack gap-2">
+          {store.isOwner() && filtered.length > 0 && (
+            <button className="btn btn-sm" onClick={() => setShowAssign(true)} title={`Assign ${filtered.length} filtered leads to a rep`}>
+              <Icon name="user" size={12}/> Assign {filtered.length}
+            </button>
+          )}
           <button className="btn btn-sm"><Icon name="sliders" size={12}/> Sort</button>
         </div>
       </div>
+
+      {showAssign && (
+        <BulkAssignModal leads={filtered} onClose={() => setShowAssign(false)}/>
+      )}
 
       {filtered.length === 0 ? (
         <div className="card subtle" style={{padding:48,textAlign:'center'}}>
