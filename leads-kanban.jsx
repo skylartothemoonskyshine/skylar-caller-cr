@@ -107,7 +107,7 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
   if (view === 'kanban') return <KanbanBoard onOpenLead={onOpenLead} onCall={onCall} view={view} setView={setView} filter={filter} setFilter={setFilter}/>;
 
   return (
-    <div className="page">
+    <div className="page" style={{maxWidth:'none'}}>
       <div className="page-header">
         <div>
           <div className="page-header-title">Leads</div>
