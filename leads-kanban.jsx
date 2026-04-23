@@ -202,11 +202,17 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
                           <Icon name="globe" size={12}/>
                         </a>
                       )}
+                      {l.mapsUrl && (
+                        <a className="btn btn-sm" href={safeUrl(l.mapsUrl)} target="_blank" rel="noreferrer" title="Open on Google Maps" onClick={e => e.stopPropagation()}>
+                          <Icon name="map_pin" size={12}/>
+                        </a>
+                      )}
                       <ActionsMenu actions={[
                         { icon: 'sliders', label: 'Edit',         onClick: () => onEdit && onEdit(l) },
                         { icon: 'message', label: 'Send SMS',     onClick: () => onSMS && onSMS(l) },
                         { icon: 'external', label: 'Copy phone',  onClick: () => { try { navigator.clipboard.writeText(l.phone); } catch {} } },
                         l.website && { icon: 'globe', label: 'Open website', onClick: () => window.open(safeUrl(l.website), '_blank') },
+                        l.mapsUrl && { icon: 'map_pin', label: 'Open on Maps', onClick: () => window.open(safeUrl(l.mapsUrl), '_blank') },
                         'divider',
                         { icon: 'close', label: 'Delete lead', danger: true, onClick: () => { if (confirm(`Delete ${l.fullName}? Call history is preserved.`)) store.deleteLead(l.id); } },
                       ]}/>
