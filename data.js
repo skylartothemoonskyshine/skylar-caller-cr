@@ -720,6 +720,29 @@ const store = {
       .then(({ error }) => logErr('setTask lead update', error));
   },
 
+  addEvent({ title, due, leadId = null }) {
+    const lead = leadId ? LEAD_OF[leadId] : null;
+    const id = crypto.randomUUID();
+    const entry = {
+      id,
+      kind: title || 'Event',
+      leadId: lead ? leadId : null,
+      leadName: lead?.fullName || '',
+      business: lead?.business || '',
+      phone: lead?.phone || '',
+      due,
+      done: false,
+      owner: this.currentRep()?.initials || '',
+    };
+    this.tasks.push(entry);
+    this.tasks.sort((a, b) => a.due - b.due);
+    this.dirty();
+
+    sb.from('tasks').insert(taskToRow(entry))
+      .then(({ error }) => logErr('addEvent insert', error));
+    return entry;
+  },
+
   clearFollowup(leadId) {
     const removed = this.tasks.filter(t => t.leadId === leadId && !t.done && t.kind === 'Call follow-up');
     this.tasks = this.tasks.filter(t => !(t.leadId === leadId && !t.done && t.kind === 'Call follow-up'));

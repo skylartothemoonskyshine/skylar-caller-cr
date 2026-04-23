@@ -33,6 +33,10 @@ const CalendarView = ({ onOpenLead }) => {
     return d;
   });
   const hours = Array.from({length: 10}, (_, i) => 8 + i); // 8am - 5pm
+  const [showNew, setShowNew] = React.useState(false);
+  const [newSlot, setNewSlot] = React.useState(null);
+
+  const openNew = (slot = null) => { setNewSlot(slot); setShowNew(true); };
 
   return (
     <div className="card" style={{overflow:'hidden'}}>
@@ -43,6 +47,7 @@ const CalendarView = ({ onOpenLead }) => {
         </div>
         <button className="btn btn-sm"><Icon name="chevron_right" size={12}/></button>
         <button className="btn btn-sm">Today</button>
+        <button className="btn btn-primary btn-sm" onClick={() => openNew()}><Icon name="plus" size={12}/> New event</button>
         <div style={{marginLeft:'auto'}} className="seg">
           <button>Day</button>
           <button className="active">Week</button>
@@ -69,23 +74,26 @@ const CalendarView = ({ onOpenLead }) => {
             {days.map((d,i) => {
               const tasksHere = TASKS.filter(t => !t.done && t.due.toDateString() === d.toDateString() && t.due.getHours() === h);
               const isT = isToday(d);
+              const slotDate = new Date(d); slotDate.setHours(h, 0, 0, 0);
               return (
-                <div key={i} style={{borderLeft:'1px solid var(--border)',borderBottom:'1px solid var(--border)',height:56,position:'relative',padding:3,background: isT ? 'var(--accent-soft)' : 'transparent',opacity: isT ? 0.6 : 1}}>
+                <div key={i}
+                     onClick={(e) => { if (e.target === e.currentTarget) openNew(slotDate); }}
+                     style={{borderLeft:'1px solid var(--border)',borderBottom:'1px solid var(--border)',height:56,position:'relative',padding:3,background: isT ? 'var(--accent-soft)' : 'transparent',opacity: isT ? 0.6 : 1,cursor:'pointer'}}>
                   {tasksHere.map(t => (
-                    <div key={t.id} onClick={()=>onOpenLead(t.leadId)} style={{
+                    <div key={t.id} onClick={(e) => { e.stopPropagation(); if (t.leadId) onOpenLead(t.leadId); }} style={{
                       background:'var(--surface)',
                       border:'1px solid var(--border)',
-                      borderLeft:'3px solid var(--accent)',
+                      borderLeft:`3px solid ${t.leadId ? 'var(--accent)' : 'var(--violet)'}`,
                       borderRadius:4,
                       padding:'3px 6px',
                       fontSize:11,
-                      cursor:'pointer',
+                      cursor: t.leadId ? 'pointer' : 'default',
                       marginBottom:2,
                       lineHeight:1.3,
                       overflow:'hidden'
                     }}>
                       <div style={{fontWeight:500}} className="ellipsis">{t.kind}</div>
-                      <div className="subtle ellipsis" style={{fontSize:10}}>{t.leadName}</div>
+                      {t.leadName && <div className="subtle ellipsis" style={{fontSize:10}}>{t.leadName}</div>}
                     </div>
                   ))}
                 </div>
@@ -93,6 +101,134 @@ const CalendarView = ({ onOpenLead }) => {
             })}
           </React.Fragment>
         ))}
+      </div>
+      {showNew && <NewEventModal defaultDue={newSlot} onClose={() => setShowNew(false)}/>}
+    </div>
+  );
+};
+
+const NewEventModal = ({ defaultDue, onClose }) => {
+  const [mode, setMode] = React.useState('manual'); // 'manual' | 'lead'
+  const [title, setTitle] = React.useState('');
+  const [query, setQuery] = React.useState('');
+  const [pickedLead, setPickedLead] = React.useState(null);
+  const [kind, setKind] = React.useState('Call follow-up');
+  const initial = defaultDue || (() => { const d = new Date(); d.setHours(d.getHours()+1,0,0,0); return d; })();
+  const pad = (n) => String(n).padStart(2,'0');
+  const [date, setDate] = React.useState(`${initial.getFullYear()}-${pad(initial.getMonth()+1)}-${pad(initial.getDate())}`);
+  const [time, setTime] = React.useState(`${pad(initial.getHours())}:${pad(initial.getMinutes())}`);
+
+  const results = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return LEADS.slice(0, 6);
+    return LEADS.filter(l =>
+      (l.fullName||'').toLowerCase().includes(q) ||
+      (l.business||'').toLowerCase().includes(q) ||
+      (l.phone||'').includes(q)
+    ).slice(0, 6);
+  }, [query]);
+
+  const canSave = mode === 'manual' ? title.trim().length > 0 : !!pickedLead;
+
+  const save = () => {
+    const [y,m,d] = date.split('-').map(Number);
+    const [hh,mm] = time.split(':').map(Number);
+    const due = new Date(y, m-1, d, hh, mm, 0, 0);
+    if (mode === 'manual') {
+      store.addEvent({ title: title.trim(), due });
+    } else {
+      store.addEvent({ title: kind, due, leadId: pickedLead.id });
+    }
+    onClose();
+  };
+
+  const onKey = (e) => {
+    if (e.key === 'Escape') onClose();
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && canSave) { e.preventDefault(); save(); }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()} onKeyDown={onKey}>
+      <div className="modal" style={{width:520}}>
+        <div className="modal-header">
+          <div style={{fontWeight:600,fontSize:14}}>New event</div>
+          <button className="iconbtn" onClick={onClose}><Icon name="close" size={14}/></button>
+        </div>
+        <div className="modal-body">
+          <div className="seg" style={{marginBottom:16}}>
+            <button className={mode==='manual'?'active':''} onClick={()=>setMode('manual')}>Manual</button>
+            <button className={mode==='lead'?'active':''} onClick={()=>setMode('lead')}>From lead</button>
+          </div>
+
+          {mode === 'manual' ? (
+            <div className="tweak-row" style={{marginBottom:14}}>
+              <div className="tweak-label">Title</div>
+              <input className="input" autoFocus placeholder="e.g. Demo with Acme, Team standup"
+                value={title} onChange={e => setTitle(e.target.value)}/>
+            </div>
+          ) : (
+            <>
+              <div className="tweak-row" style={{marginBottom:14}}>
+                <div className="tweak-label">Lead</div>
+                {pickedLead ? (
+                  <div className="hstack gap-2" style={{padding:'6px 10px',border:'1px solid var(--border)',borderRadius:6,background:'var(--surface-2)'}}>
+                    <Avatar initials={pickedLead.initials} size={22}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:500,fontSize:13}} className="ellipsis">{pickedLead.fullName}</div>
+                      <div className="subtle ellipsis" style={{fontSize:11.5}}>{pickedLead.business}</div>
+                    </div>
+                    <button className="btn btn-sm" onClick={() => setPickedLead(null)}>Change</button>
+                  </div>
+                ) : (
+                  <>
+                    <input className="input" autoFocus placeholder="Search leads by name, business, phone…"
+                      value={query} onChange={e => setQuery(e.target.value)}/>
+                    <div style={{border:'1px solid var(--border)',borderRadius:6,marginTop:6,maxHeight:180,overflow:'auto'}}>
+                      {results.length === 0 && <div className="subtle" style={{padding:12,fontSize:12,textAlign:'center'}}>No leads match.</div>}
+                      {results.map(l => (
+                        <button key={l.id} onClick={() => setPickedLead(l)} className="hstack gap-2"
+                          style={{width:'100%',padding:'8px 10px',border:'none',background:'transparent',textAlign:'left',borderBottom:'1px solid var(--border)',cursor:'pointer'}}>
+                          <Avatar initials={l.initials} size={20}/>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontWeight:500,fontSize:12.5}} className="ellipsis">{l.fullName}</div>
+                            <div className="subtle ellipsis" style={{fontSize:11}}>{l.business} · <span className="mono">{l.phone}</span></div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="tweak-row" style={{marginBottom:14}}>
+                <div className="tweak-label">Kind</div>
+                <select className="input" value={kind} onChange={e => setKind(e.target.value)}>
+                  <option>Call follow-up</option>
+                  <option>Meeting</option>
+                  <option>Demo</option>
+                  <option>Check-in</option>
+                  <option>Email</option>
+                </select>
+              </div>
+            </>
+          )}
+
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+            <div className="tweak-row">
+              <div className="tweak-label">Date</div>
+              <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)}/>
+            </div>
+            <div className="tweak-row">
+              <div className="tweak-label">Time</div>
+              <input className="input" type="time" value={time} onChange={e => setTime(e.target.value)}/>
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer hstack gap-2" style={{justifyContent:'flex-end'}}>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={!canSave} style={{opacity: canSave ? 1 : 0.5}} onClick={save}>
+            Add event <span className="kbd">⌘⏎</span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -126,16 +262,16 @@ const TaskGroup = ({ title, count, tasks, onOpenLead, tone }) => (
     </div>
     <div>
       {tasks.slice(0, 8).map((t, i) => (
-        <div key={t.id} className="hstack gap-3" style={{padding:'10px 16px',borderBottom: i === Math.min(tasks.length,8) - 1 ? 'none' : '1px solid var(--border)',cursor:'pointer'}} onClick={() => onOpenLead(t.leadId)}>
+        <div key={t.id} className="hstack gap-3" style={{padding:'10px 16px',borderBottom: i === Math.min(tasks.length,8) - 1 ? 'none' : '1px solid var(--border)',cursor: t.leadId ? 'pointer' : 'default'}} onClick={() => t.leadId && onOpenLead(t.leadId)}>
           <button style={{width:16,height:16,border:'1.5px solid var(--border-strong)',borderRadius:4,background: t.done ? 'var(--accent)' : 'transparent',display:'grid',placeItems:'center',flexShrink:0,padding:0}}
                   onClick={e => { e.stopPropagation(); store.toggleTask(t.id); }}>
             {t.done && <Icon name="check" size={10} style={{color:'white'}}/>}
           </button>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:13,fontWeight:500,textDecoration: t.done ? 'line-through' : 'none',color: t.done ? 'var(--text-subtle)' : 'var(--text)'}} className="ellipsis">
-              {t.kind} · {t.leadName}
+              {t.kind}{t.leadName ? ` · ${t.leadName}` : ''}
             </div>
-            <div className="subtle ellipsis" style={{fontSize:11.5}}>{t.business}</div>
+            {t.business && <div className="subtle ellipsis" style={{fontSize:11.5}}>{t.business}</div>}
           </div>
           <span className="mono subtle" style={{fontSize:11.5,whiteSpace:'nowrap'}}>{formatTime(t.due)}</span>
         </div>

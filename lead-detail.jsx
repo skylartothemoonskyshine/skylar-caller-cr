@@ -96,7 +96,7 @@ const LeadDetailA = ({ lead, onCall, onBack, onQuickLog, onSMS, onEdit }) => {
             <DetailRow label="Email"><span style={{fontSize:12}}>{lead.email || '—'}</span></DetailRow>
             <DetailRow label="Website">
               {lead.website
-                ? <a href={safeUrl(lead.website)} target="_blank" rel="noreferrer" style={{fontSize:12,color:'var(--accent)'}}>{displayUrl(lead.website)} ↗</a>
+                ? <a href={safeUrl(lead.website)} target="_blank" rel="noreferrer" title={lead.website} style={{fontSize:12,color:'var(--accent)'}}>{displayUrl(lead.website)} ↗</a>
                 : <span style={{fontSize:12}}>—</span>}
             </DetailRow>
             <DetailRow label="Last call">{lead.lastCallAt ? relativeString(lead.lastCallAt) : '—'}</DetailRow>
@@ -313,7 +313,7 @@ const LeadDetailA = ({ lead, onCall, onBack, onQuickLog, onSMS, onEdit }) => {
 const DetailRow = ({ label, children }) => (
   <div style={{display:'grid',gridTemplateColumns:'80px 1fr',gap:8,padding:'6px 0',alignItems:'center',fontSize:12.5}}>
     <div className="subtle" style={{fontSize:11.5}}>{label}</div>
-    <div>{children}</div>
+    <div style={{minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{children}</div>
   </div>
 );
 
