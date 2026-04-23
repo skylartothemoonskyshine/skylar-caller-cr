@@ -769,6 +769,12 @@ const store = {
     return entry;
   },
 
+  deleteTask(id) {
+    this.tasks = this.tasks.filter(t => t.id !== id);
+    this.dirty();
+    sb.from('tasks').delete().eq('id', id).then(({ error }) => logErr('deleteTask', error));
+  },
+
   clearFollowup(leadId) {
     const removed = this.tasks.filter(t => t.leadId === leadId && !t.done && t.kind === 'Call follow-up');
     this.tasks = this.tasks.filter(t => !(t.leadId === leadId && !t.done && t.kind === 'Call follow-up'));
