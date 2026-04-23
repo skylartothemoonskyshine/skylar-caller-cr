@@ -122,6 +122,55 @@ function App() {
     return () => { stopped = true; clearInterval(id); };
   }, []);
 
+  // Owner-only: poll inbound calls every 60s and create call_logs rows for
+  // any new voicemails. Matches the caller's phone to an existing lead when
+  // possible. Others will see these on their next bootstrap.
+  React.useEffect(() => {
+    if (!store.isOwner()) return;
+    let lastPoll = Number(localStorage.getItem('skylar:lastVmPoll')) || (Date.now() - 24 * 3600 * 1000);
+    let stopped = false;
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        const r = await fetch(`/api/voicemails-recent?since=${lastPoll}`);
+        if (!r.ok) return;
+        const { voicemails, now } = await r.json();
+        let added = 0;
+        for (const vm of (voicemails || [])) {
+          if (CALL_LOGS.find(c => c.callSid === vm.callSid)) continue;
+          const normFrom = normalizePhone(vm.from || '');
+          const matchLead = normFrom ? LEADS.find(l => normalizePhone(l.phone) === normFrom) : null;
+          const entry = store.addCallLog({
+            leadId: matchLead?.id,
+            disposition: 'Inbound',
+            outcome: vm.recordingSid ? 'Voicemail left' : 'No message',
+            duration: formatDurationSec(vm.duration || 0),
+            callSid: vm.callSid,
+            snapshot: {
+              fullName: matchLead?.fullName || 'Inbound caller',
+              business: matchLead?.business || '—',
+              phone: vm.from || '',
+            },
+          });
+          if (vm.recordingSid && entry) {
+            store.attachRecording(entry.leadId, {
+              recordingSid: vm.recordingSid,
+              callSid: vm.callSid,
+              url: vm.recordingUrl,
+              duration: vm.duration,
+            });
+          }
+          added++;
+        }
+        if (added > 0) setToast(`${added} inbound call${added === 1 ? '' : 's'}`);
+        if (now) { lastPoll = now; localStorage.setItem('skylar:lastVmPoll', String(now)); }
+      } catch { /* offline or Twilio not configured — fine */ }
+    };
+    poll();
+    const id = setInterval(poll, 60000);
+    return () => { stopped = true; clearInterval(id); };
+  }, []);
+
   React.useEffect(() => { localStorage.setItem('route', route); }, [route]);
   React.useEffect(() => { if (leadId) localStorage.setItem('leadId', leadId); }, [leadId]);
   React.useEffect(() => { applyTweaks(tweaks); localStorage.setItem('skylar:tweaks', JSON.stringify(tweaks)); }, [tweaks]);

@@ -386,6 +386,7 @@ const CallLogsPage = ({ onOpenLead }) => {
     if (filter === 'all') return true;
     if (filter === 'connected') return c.disposition === 'Connected';
     if (filter === 'missed') return c.disposition === 'No answer' || c.disposition === 'Voicemail';
+    if (filter === 'inbound') return c.disposition === 'Inbound';
     if (filter === 'recorded') return !!c.recordingUrl;
     return true;
   });
@@ -430,6 +431,7 @@ const CallLogsPage = ({ onOpenLead }) => {
           ['all','All',CALL_LOGS.length],
           ['connected','Connected',connected],
           ['missed','No answer / VM',CALL_LOGS.filter(c=>c.disposition==='No answer'||c.disposition==='Voicemail').length],
+          ['inbound','Inbound',CALL_LOGS.filter(c=>c.disposition==='Inbound').length],
           ['recorded','Recorded',recordedCount],
         ].map(([id,label,count])=>(
           <button key={id} className="btn btn-sm" style={{borderColor: filter===id?'var(--text)':'var(--border)',background: filter===id?'var(--surface-2)':'var(--surface)'}} onClick={()=>setFilter(id)}>
@@ -468,9 +470,13 @@ const CallLogsPage = ({ onOpenLead }) => {
                   </td>
                   <td className="mono" style={{fontSize:12}}>{c.phone}</td>
                   <td>
-                    <span className="badge" style={{color: c.disposition === 'Connected' ? 'var(--green)' : c.disposition === 'No answer' ? 'var(--text-muted)' : 'var(--amber)'}}>
+                    <span className="badge" style={{color:
+                      c.disposition === 'Connected' ? 'var(--green)'
+                      : c.disposition === 'Inbound'   ? 'var(--accent)'
+                      : c.disposition === 'No answer' ? 'var(--text-muted)'
+                      : 'var(--amber)'}}>
                       <span className="badge-dot"/>
-                      {c.disposition}
+                      {c.disposition === 'Inbound' ? '↙ Inbound' : c.disposition}
                     </span>
                   </td>
                   <td className="muted" style={{fontSize:12.5}}>{c.outcome}</td>
