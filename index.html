@@ -245,8 +245,8 @@ function App() {
         {route === 'phone' && <PhonePage onCall={startCall} onSMS={(l) => setSmsLead(l)} onOpenLead={(id) => id === '_calls' ? setRoute('calls') : openLead(id)}/>}
         {route === 'leads' && <LeadsTable onOpenLead={openLead} onCall={startCall} onEdit={(l) => setEditLead(l)} onSMS={(l) => setSmsLead(l)}/>}
         {route === 'pipeline' && <KanbanBoard onOpenLead={openLead} onCall={startCall} view="kanban" setView={(v)=>setRoute(v==='table'?'leads':'pipeline')} filter="all" setFilter={()=>{}}/>}
-        {route === 'calendar' && <CalendarTasks onOpenLead={openLead}/>}
-        {route === 'tasks' && <CalendarTasks onOpenLead={openLead}/>}
+        {route === 'calendar' && <CalendarTasks onOpenLead={openLead} initialTab="calendar"/>}
+        {route === 'tasks' && <CalendarTasks onOpenLead={openLead} initialTab="tasks"/>}
         {route === 'calls' && <CallLogsPage onOpenLead={openLead}/>}
         {route === 'lead' && activeLead && (tweaks.leadVariant === 'timeline'
           ? <LeadDetailB lead={activeLead} onCall={startCall} onBack={() => setRoute('leads')} onQuickLog={() => setShowLog(activeLead)} onSMS={() => setSmsLead(activeLead)} onEdit={() => setEditLead(activeLead)}/>

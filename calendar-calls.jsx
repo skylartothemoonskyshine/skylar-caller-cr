@@ -1,7 +1,8 @@
 // Calendar + Tasks + Call logs pages
 
-const CalendarTasks = ({ onOpenLead }) => {
-  const [tab, setTab] = React.useState('calendar');
+const CalendarTasks = ({ onOpenLead, initialTab = 'calendar' }) => {
+  const [tab, setTab] = React.useState(initialTab);
+  React.useEffect(() => { setTab(initialTab); }, [initialTab]);
   return (
     <div className="page">
       <div className="page-header">
