@@ -373,7 +373,10 @@ const ImportLeads = ({ onDone }) => {
   const ref = React.useRef(null);
   const [pending, setPending] = React.useState(null); // { rows, fileName }
   const [ownerId, setOwnerId] = React.useState(store.me || '');
+  const [section, setSection] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+
+  const existingSections = [...new Set((store.leads || []).map(l => l.section).filter(Boolean))].sort();
 
   const open = () => ref.current?.click();
   const onFile = (e) => {
@@ -385,6 +388,7 @@ const ImportLeads = ({ onDone }) => {
       const rows = parseCSV(text);
       setPending({ rows, fileName: file.name });
       setOwnerId(store.me || REPS[0]?.id || '');
+      setSection('');
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -393,7 +397,7 @@ const ImportLeads = ({ onDone }) => {
   const confirm = async () => {
     if (!pending || busy) return;
     setBusy(true);
-    const count = await store.importLeads(pending.rows, { ownerId });
+    const count = await store.importLeads(pending.rows, { ownerId, section });
     setBusy(false);
     setPending(null);
     onDone && onDone(count);
@@ -433,13 +437,29 @@ const ImportLeads = ({ onDone }) => {
                   ))}
                 </div>
               </div>
+              <div className="tweak-row" style={{marginTop:14}}>
+                <div className="tweak-label">Section</div>
+                <input
+                  className="input"
+                  list="import-section-list"
+                  placeholder="e.g. Miami Cleaning, HVAC Texas"
+                  value={section}
+                  onChange={e => setSection(e.target.value)}
+                />
+                <datalist id="import-section-list">
+                  {existingSections.map(s => <option key={s} value={s}/>)}
+                </datalist>
+                <div className="subtle" style={{fontSize:11.5,marginTop:6}}>
+                  Pick an existing section or type a new one. Used to keep this list separate in Leads + Pipeline.
+                </div>
+              </div>
               <div className="subtle" style={{fontSize:11.5,marginTop:10}}>
                 All {pending.rows.length} leads will be assigned to the selected rep. They won't mix with other reps' leads.
               </div>
             </div>
             <div className="modal-footer hstack gap-2" style={{justifyContent:'flex-end'}}>
               <button className="btn" onClick={() => setPending(null)} disabled={busy}>Cancel</button>
-              <button className="btn btn-primary" onClick={confirm} disabled={busy || !ownerId}>
+              <button className="btn btn-primary" onClick={confirm} disabled={busy || !ownerId || !section.trim()}>
                 {busy ? 'Importing…' : `Import ${pending.rows.length} leads`}
               </button>
             </div>

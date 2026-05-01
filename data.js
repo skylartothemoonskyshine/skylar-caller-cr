@@ -109,6 +109,7 @@ function leadFromRow(r) {
     ownerName: REP_OF[r.owner_id]?.name || '',
     ownerInitials: REP_OF[r.owner_id]?.initials || '',
     source: r.source || '',
+    section: r.section || '',
     lastCallAt: r.last_call_at ? new Date(r.last_call_at) : null,
     nextFollowupAt: r.next_followup_at ? new Date(r.next_followup_at) : null,
     callAttempts: r.call_attempts || 0,
@@ -136,6 +137,7 @@ function leadToRow(l) {
     stage: l.stage,
     owner_id: l.ownerId || null,
     source: l.source || null,
+    section: l.section || null,
     last_call_at: l.lastCallAt ? l.lastCallAt.toISOString() : null,
     next_followup_at: l.nextFollowupAt ? l.nextFollowupAt.toISOString() : null,
     call_attempts: l.callAttempts || 0,
@@ -497,9 +499,10 @@ const store = {
     sb.from('call_logs').update(callLogToRow(c)).eq('id', id).then(({ error }) => logErr('updateCallLog', error));
   },
 
-  async importLeads(rows, { ownerId } = {}) {
+  async importLeads(rows, { ownerId, section } = {}) {
     const assignedId = ownerId || this.me || null;
     const rep = REP_OF[assignedId] || this.currentRep();
+    const sectionTag = (section || '').trim() || null;
     const mapped = rows.map((row) => {
       const title = (row.title || '').trim();
       const business = (row.business || row.company || title).trim();
@@ -535,6 +538,7 @@ const store = {
         ownerName: rep?.name || '',
         ownerInitials: rep?.initials || '',
         source: row.source || (title ? 'Google Maps' : 'Imported'),
+        section: sectionTag,
         lastCallAt: null,
         nextFollowupAt: null,
         callAttempts: 0,

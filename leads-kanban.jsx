@@ -91,20 +91,25 @@ const BulkAssignModal = ({ leads, onClose }) => {
 
 const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
   const [filter, setFilter] = React.useState('all');
+  const [section, setSection] = React.useState(localStorage.getItem('leadsSection') || 'all');
   const [view, setView] = React.useState(localStorage.getItem('leadsView') || 'table');
   const [showAssign, setShowAssign] = React.useState(false);
   React.useEffect(() => { localStorage.setItem('leadsView', view); }, [view]);
+  React.useEffect(() => { localStorage.setItem('leadsSection', section); }, [section]);
 
-  const scoped = store.visibleLeads();
+  const scopedAll = store.visibleLeads();
+  const sections = [...new Set(scopedAll.map(l => l.section).filter(Boolean))].sort();
+  const scoped = section === 'all' ? scopedAll : scopedAll.filter(l => (l.section || '') === section);
   const filtered = scoped.filter(l => {
     if (filter === 'all') return true;
     if (filter === 'mine') return l.ownerId === store.effectiveMe();
     if (filter === 'active') return !['won','lost'].includes(l.stage);
     if (filter === 'today') return l.nextFollowupAt && isToday(l.nextFollowupAt);
+    if (filter === 'followup') return !!l.nextFollowupAt;
     return true;
   });
 
-  if (view === 'kanban') return <KanbanBoard onOpenLead={onOpenLead} onCall={onCall} view={view} setView={setView} filter={filter} setFilter={setFilter}/>;
+  if (view === 'kanban') return <KanbanBoard onOpenLead={onOpenLead} onCall={onCall} view={view} setView={setView} filter={filter} setFilter={setFilter} section={section} setSection={setSection} sections={sections}/>;
 
   return (
     <div className="page" style={{maxWidth:'none'}}>
@@ -121,8 +126,22 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
         </div>
       </div>
 
+      {sections.length > 0 && (
+        <div className="hstack gap-2" style={{marginBottom:10,flexWrap:'wrap'}}>
+          <span className="subtle" style={{fontSize:11.5,textTransform:'uppercase',letterSpacing:'0.05em',marginRight:4}}>Section</span>
+          <button className="btn btn-sm" style={{borderColor: section==='all'?'var(--text)':'var(--border)',background: section==='all'?'var(--surface-2)':'var(--surface)'}} onClick={()=>setSection('all')}>
+            All <span className="subtle mono" style={{marginLeft:4}}>{scopedAll.length}</span>
+          </button>
+          {sections.map(s => (
+            <button key={s} className="btn btn-sm" style={{borderColor: section===s?'var(--text)':'var(--border)',background: section===s?'var(--surface-2)':'var(--surface)'}} onClick={()=>setSection(s)}>
+              {s} <span className="subtle mono" style={{marginLeft:4}}>{scopedAll.filter(l=>(l.section||'')===s).length}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="hstack gap-2" style={{marginBottom:14,flexWrap:'wrap'}}>
-        {[['all','All',scoped.length],['mine','Assigned to me',scoped.filter(l=>l.ownerId===store.effectiveMe()).length],['active','Active',scoped.filter(l=>!['won','lost'].includes(l.stage)).length],['today','Due today',scoped.filter(l=>l.nextFollowupAt&&isToday(l.nextFollowupAt)).length]].map(([id,label,count])=>(
+        {[['all','All',scoped.length],['mine','Assigned to me',scoped.filter(l=>l.ownerId===store.effectiveMe()).length],['active','Active',scoped.filter(l=>!['won','lost'].includes(l.stage)).length],['today','Due today',scoped.filter(l=>l.nextFollowupAt&&isToday(l.nextFollowupAt)).length],['followup','Follow-ups',scoped.filter(l=>l.nextFollowupAt).length]].map(([id,label,count])=>(
             <button key={id} className="btn btn-sm" style={{borderColor: filter===id?'var(--text)':'var(--border)',background: filter===id?'var(--surface-2)':'var(--surface)'}} onClick={()=>setFilter(id)}>
               {label} <span className="subtle mono" style={{marginLeft:4}}>{count}</span>
             </button>
@@ -163,6 +182,7 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
                 <th>Stage</th>
                 <th>Phone</th>
                 <th>Niche</th>
+                <th>Section</th>
                 <th>Location</th>
                 <th>Owner</th>
                 <th>Last call</th>
@@ -184,6 +204,7 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
                   <td><StagePill stageId={l.stage}/></td>
                   <td className="mono" style={{fontSize:12}}>{l.phone}</td>
                   <td className="muted">{l.niche}</td>
+                  <td className="muted">{l.section || <span className="subtle">—</span>}</td>
                   <td className="muted">{l.location}</td>
                   <td><span className="hstack gap-2"><Avatar initials={l.ownerInitials} size={18}/><span className="muted">{l.ownerName.split(' ')[0]}</span></span></td>
                   <td className="muted" style={{fontSize:12}}>{l.lastCallAt ? relativeString(l.lastCallAt) : <span className="subtle">Never</span>}</td>
@@ -229,12 +250,14 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
   );
 };
 
-const KanbanBoard = ({ onOpenLead, onCall, view, setView, filter, setFilter }) => {
+const KanbanBoard = ({ onOpenLead, onCall, view, setView, filter, setFilter, section, setSection, sections }) => {
   const [draggedId, setDraggedId] = React.useState(null);
   const [overStage, setOverStage] = React.useState(null);
 
+  const allLeads = store.visibleLeads();
+  const sectionScoped = (section && section !== 'all') ? allLeads.filter(l => (l.section || '') === section) : allLeads;
   const leadsByStage = Object.fromEntries(STAGES.map(s => [s.id, []]));
-  store.visibleLeads().forEach(l => { if (leadsByStage[l.stage]) leadsByStage[l.stage].push(l); });
+  sectionScoped.forEach(l => { if (leadsByStage[l.stage]) leadsByStage[l.stage].push(l); });
 
   return (
     <div className="page" style={{maxWidth:'none',paddingRight:20,paddingLeft:20}}>
@@ -250,6 +273,20 @@ const KanbanBoard = ({ onOpenLead, onCall, view, setView, filter, setFilter }) =
           </div>
         </div>
       </div>
+
+      {sections && sections.length > 0 && (
+        <div className="hstack gap-2" style={{marginBottom:14,flexWrap:'wrap'}}>
+          <span className="subtle" style={{fontSize:11.5,textTransform:'uppercase',letterSpacing:'0.05em',marginRight:4}}>Section</span>
+          <button className="btn btn-sm" style={{borderColor: section==='all'?'var(--text)':'var(--border)',background: section==='all'?'var(--surface-2)':'var(--surface)'}} onClick={()=>setSection('all')}>
+            All <span className="subtle mono" style={{marginLeft:4}}>{allLeads.length}</span>
+          </button>
+          {sections.map(s => (
+            <button key={s} className="btn btn-sm" style={{borderColor: section===s?'var(--text)':'var(--border)',background: section===s?'var(--surface-2)':'var(--surface)'}} onClick={()=>setSection(s)}>
+              {s} <span className="subtle mono" style={{marginLeft:4}}>{allLeads.filter(l=>(l.section||'')===s).length}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div style={{display:'flex',gap:12,overflowX:'auto',paddingBottom:16}}>
         {STAGES.map(s => (
