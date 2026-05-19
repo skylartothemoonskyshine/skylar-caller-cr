@@ -19,7 +19,13 @@ module.exports = async (req, res) => {
       return;
     }
 
-    const from = env('TWILIO_FROM_NUMBER');
+    // Twilio sends From as "client:<identity>" for Voice-SDK-initiated calls.
+    const identity = String(params.From || '').replace(/^client:/, '');
+    const rayanId = env('RAYAN_IDENTITY', false);
+    const rayanNum = env('TWILIO_FROM_NUMBER_RAYAN', false);
+    const from = (rayanId && rayanNum && identity === rayanId)
+      ? rayanNum
+      : env('TWILIO_FROM_NUMBER');
     const publicUrl = env('PUBLIC_URL', false) || '';
     const statusCallback = publicUrl ? `${publicUrl.replace(/\/$/, '')}/api/recording?leadId=${encodeURIComponent(leadId)}` : '';
 

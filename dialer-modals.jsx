@@ -7,7 +7,9 @@ async function initTwilioDevice(onError) {
     return { state: 'error', error: 'Twilio Voice SDK failed to load' };
   }
   try {
-    const r = await fetch('/api/token');
+    const identity = (window.store?.user?.email || '').split('@')[0];
+    const qs = identity ? `?identity=${encodeURIComponent(identity)}` : '';
+    const r = await fetch('/api/token' + qs);
     if (r.status === 503) return { state: 'unconfigured' };
     if (!r.ok) throw new Error(`Token endpoint ${r.status}`);
     const { token } = await r.json();
@@ -18,7 +20,7 @@ async function initTwilioDevice(onError) {
     d.on('error', (e) => { console.error('[device error]', e); onError && onError(e.message || String(e)); });
     d.on('tokenWillExpire', async () => {
       try {
-        const rr = await fetch('/api/token');
+        const rr = await fetch('/api/token' + qs);
         const { token: t } = await rr.json();
         d.updateToken(t);
       } catch (e) { console.error('token refresh failed', e); }
@@ -417,7 +419,7 @@ const QuickLogModal = ({ lead, defaultDuration = '2:30', callSid = null, onClose
   const [disposition, setDisposition] = React.useState('Connected');
   const [outcome, setOutcome] = React.useState('');
   const [note, setNote] = React.useState('');
-  const [followup, setFollowup] = React.useState('3d');
+  const [followup, setFollowup] = React.useState('today');
   const [stage, setStage] = React.useState(STAGE_FOR_DISPOSITION['Connected']);
   const [stageTouched, setStageTouched] = React.useState(false);
 
@@ -437,6 +439,7 @@ const QuickLogModal = ({ lead, defaultDuration = '2:30', callSid = null, onClose
 
   const followups = [
     { id: 'none', label: 'No follow-up' },
+    { id: 'today', label: 'Today' },
     { id: '1d', label: 'Tomorrow' },
     { id: '3d', label: 'In 3 days' },
     { id: '1w', label: 'Next week' },
@@ -455,9 +458,11 @@ const QuickLogModal = ({ lead, defaultDuration = '2:30', callSid = null, onClose
     if (stage !== lead.stage) store.updateLead(lead.id, { stage });
     if (followup !== 'none') {
       const due = new Date();
-      const offset = followup === '1d' ? 1 : followup === '3d' ? 3 : 7;
-      due.setDate(due.getDate() + offset);
-      due.setHours(10, 0, 0, 0);
+      if (followup !== 'today') {
+        const offset = followup === '1d' ? 1 : followup === '3d' ? 3 : 7;
+        due.setDate(due.getDate() + offset);
+        due.setHours(10, 0, 0, 0);
+      }
       store.setTask(lead.id, due, 'Call follow-up');
     }
     if (onSaved) onSaved({ advance: false });
