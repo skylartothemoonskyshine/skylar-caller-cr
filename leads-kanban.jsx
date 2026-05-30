@@ -89,9 +89,59 @@ const BulkAssignModal = ({ leads, onClose }) => {
   );
 };
 
+const FilterChip = ({ icon, label, value, options, onChange }) => {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  const active = value && value !== 'all';
+  const current = active ? options.find(o => o.value === value) : null;
+  return (
+    <div ref={ref} style={{position:'relative',display:'inline-block'}}>
+      <button className="btn btn-sm" onClick={() => setOpen(o => !o)}
+              style={{borderColor: active ? 'var(--text)' : 'var(--border)', background: active ? 'var(--surface-2)' : 'var(--surface)'}}>
+        <Icon name={icon} size={12}/> {label}{current ? `: ${current.label}` : ''}
+        {active && <span onClick={e => { e.stopPropagation(); onChange('all'); }} style={{marginLeft:4,opacity:0.7,cursor:'pointer'}}>×</span>}
+      </button>
+      {open && (
+        <div style={{position:'absolute',left:0,top:'calc(100% + 4px)',minWidth:180,maxHeight:320,overflowY:'auto',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:8,boxShadow:'var(--shadow-lg)',zIndex:60,padding:4}}>
+          <button className="nav-item" style={{padding:'7px 10px',fontSize:12.5,width:'100%',textAlign:'left'}}
+                  onClick={() => { onChange('all'); setOpen(false); }}>
+            <span>All {label.toLowerCase()}s</span>
+          </button>
+          <div style={{height:1,background:'var(--border)',margin:'4px 2px'}}/>
+          {options.length === 0 ? (
+            <div className="subtle" style={{padding:'8px 10px',fontSize:12}}>No values</div>
+          ) : options.map(o => (
+            <button key={o.value} className="nav-item"
+                    style={{padding:'7px 10px',fontSize:12.5,width:'100%',textAlign:'left',background: value===o.value ? 'var(--surface-2)' : undefined}}
+                    onClick={() => { onChange(o.value); setOpen(false); }}>
+              <span>{o.label}</span>
+              {o.count != null && <span className="subtle mono" style={{marginLeft:'auto',fontSize:11}}>{o.count}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
   const [filter, setFilter] = React.useState('all');
   const [section, setSection] = React.useState(localStorage.getItem('leadsSection') || 'all');
+  const [stageFilter, setStageFilter] = React.useState('all');
+  const [ownerFilter, setOwnerFilter] = React.useState('all');
+  const [locationFilter, setLocationFilter] = React.useState('all');
+  const [nicheFilter, setNicheFilter] = React.useState('all');
   const [view, setView] = React.useState(localStorage.getItem('leadsView') || 'table');
   const [showAssign, setShowAssign] = React.useState(false);
   React.useEffect(() => { localStorage.setItem('leadsView', view); }, [view]);
@@ -100,12 +150,30 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
   const scopedAll = store.visibleLeads();
   const sections = [...new Set(scopedAll.map(l => l.section).filter(Boolean))].sort();
   const scoped = section === 'all' ? scopedAll : scopedAll.filter(l => (l.section || '') === section);
+
+  const countBy = (key) => {
+    const m = new Map();
+    scoped.forEach(l => { const v = l[key]; if (v) m.set(v, (m.get(v) || 0) + 1); });
+    return m;
+  };
+  const stageCounts = countBy('stage');
+  const ownerCounts = countBy('ownerId');
+  const locationCounts = countBy('location');
+  const nicheCounts = countBy('niche');
+  const stageOptions = STAGES.filter(s => stageCounts.has(s.id)).map(s => ({ value: s.id, label: s.name || s.label || s.id, count: stageCounts.get(s.id) }));
+  const ownerOptions = REPS.filter(r => ownerCounts.has(r.id)).map(r => ({ value: r.id, label: r.name, count: ownerCounts.get(r.id) }));
+  const locationOptions = [...locationCounts.entries()].sort((a,b) => b[1]-a[1]).map(([v,c]) => ({ value: v, label: v, count: c }));
+  const nicheOptions = [...nicheCounts.entries()].sort((a,b) => b[1]-a[1]).map(([v,c]) => ({ value: v, label: v, count: c }));
+
   const filtered = scoped.filter(l => {
-    if (filter === 'all') return true;
-    if (filter === 'mine') return l.ownerId === store.effectiveMe();
-    if (filter === 'active') return !['won','lost'].includes(l.stage);
-    if (filter === 'today') return l.nextFollowupAt && isToday(l.nextFollowupAt);
-    if (filter === 'followup') return !!l.nextFollowupAt;
+    if (filter === 'mine' && l.ownerId !== store.effectiveMe()) return false;
+    if (filter === 'active' && ['won','lost'].includes(l.stage)) return false;
+    if (filter === 'today' && !(l.nextFollowupAt && isToday(l.nextFollowupAt))) return false;
+    if (filter === 'followup' && !l.nextFollowupAt) return false;
+    if (stageFilter !== 'all' && l.stage !== stageFilter) return false;
+    if (ownerFilter !== 'all' && l.ownerId !== ownerFilter) return false;
+    if (locationFilter !== 'all' && l.location !== locationFilter) return false;
+    if (nicheFilter !== 'all' && l.niche !== nicheFilter) return false;
     return true;
   });
 
@@ -147,10 +215,10 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
             </button>
           ))}
         <div className="v-divider" style={{margin:'0 6px'}}/>
-        <button className="btn btn-sm"><Icon name="filter" size={12}/> Stage</button>
-        <button className="btn btn-sm"><Icon name="user" size={12}/> Owner</button>
-        <button className="btn btn-sm"><Icon name="map_pin" size={12}/> Location</button>
-        <button className="btn btn-sm"><Icon name="flame" size={12}/> Niche</button>
+        <FilterChip icon="filter" label="Stage" value={stageFilter} options={stageOptions} onChange={setStageFilter}/>
+        <FilterChip icon="user" label="Owner" value={ownerFilter} options={ownerOptions} onChange={setOwnerFilter}/>
+        <FilterChip icon="map_pin" label="Location" value={locationFilter} options={locationOptions} onChange={setLocationFilter}/>
+        <FilterChip icon="flame" label="Niche" value={nicheFilter} options={nicheOptions} onChange={setNicheFilter}/>
         <div style={{marginLeft:'auto'}} className="hstack gap-2">
           {store.isOwner() && filtered.length > 0 && (
             <button className="btn btn-sm" onClick={() => setShowAssign(true)} title={`Assign ${filtered.length} filtered leads to a rep`}>
@@ -253,11 +321,37 @@ const LeadsTable = ({ onOpenLead, onCall, onEdit, onSMS }) => {
 const KanbanBoard = ({ onOpenLead, onCall, view, setView, filter, setFilter, section, setSection, sections }) => {
   const [draggedId, setDraggedId] = React.useState(null);
   const [overStage, setOverStage] = React.useState(null);
+  const [ownerFilter, setOwnerFilter] = React.useState('all');
+  const [locationFilter, setLocationFilter] = React.useState('all');
+  const [nicheFilter, setNicheFilter] = React.useState('all');
+  const [internalSection, setInternalSection] = React.useState(localStorage.getItem('leadsSection') || 'all');
+  const effSection = section !== undefined ? section : internalSection;
+  const effSetSection = setSection || setInternalSection;
 
   const allLeads = store.visibleLeads();
-  const sectionScoped = (section && section !== 'all') ? allLeads.filter(l => (l.section || '') === section) : allLeads;
+  const effSections = sections || [...new Set(allLeads.map(l => l.section).filter(Boolean))].sort();
+  const sectionScoped = (effSection && effSection !== 'all') ? allLeads.filter(l => (l.section || '') === effSection) : allLeads;
+
+  const countBy = (key) => {
+    const m = new Map();
+    sectionScoped.forEach(l => { const v = l[key]; if (v) m.set(v, (m.get(v) || 0) + 1); });
+    return m;
+  };
+  const ownerCounts = countBy('ownerId');
+  const locationCounts = countBy('location');
+  const nicheCounts = countBy('niche');
+  const ownerOptions = REPS.filter(r => ownerCounts.has(r.id)).map(r => ({ value: r.id, label: r.name, count: ownerCounts.get(r.id) }));
+  const locationOptions = [...locationCounts.entries()].sort((a,b) => b[1]-a[1]).map(([v,c]) => ({ value: v, label: v, count: c }));
+  const nicheOptions = [...nicheCounts.entries()].sort((a,b) => b[1]-a[1]).map(([v,c]) => ({ value: v, label: v, count: c }));
+
+  const fullyScoped = sectionScoped.filter(l => {
+    if (ownerFilter !== 'all' && l.ownerId !== ownerFilter) return false;
+    if (locationFilter !== 'all' && l.location !== locationFilter) return false;
+    if (nicheFilter !== 'all' && l.niche !== nicheFilter) return false;
+    return true;
+  });
   const leadsByStage = Object.fromEntries(STAGES.map(s => [s.id, []]));
-  sectionScoped.forEach(l => { if (leadsByStage[l.stage]) leadsByStage[l.stage].push(l); });
+  fullyScoped.forEach(l => { if (leadsByStage[l.stage]) leadsByStage[l.stage].push(l); });
 
   return (
     <div className="page" style={{maxWidth:'none',paddingRight:20,paddingLeft:20}}>
@@ -274,19 +368,25 @@ const KanbanBoard = ({ onOpenLead, onCall, view, setView, filter, setFilter, sec
         </div>
       </div>
 
-      {sections && sections.length > 0 && (
-        <div className="hstack gap-2" style={{marginBottom:14,flexWrap:'wrap'}}>
+      {effSections && effSections.length > 0 && (
+        <div className="hstack gap-2" style={{marginBottom:10,flexWrap:'wrap'}}>
           <span className="subtle" style={{fontSize:11.5,textTransform:'uppercase',letterSpacing:'0.05em',marginRight:4}}>Section</span>
-          <button className="btn btn-sm" style={{borderColor: section==='all'?'var(--text)':'var(--border)',background: section==='all'?'var(--surface-2)':'var(--surface)'}} onClick={()=>setSection('all')}>
+          <button className="btn btn-sm" style={{borderColor: effSection==='all'?'var(--text)':'var(--border)',background: effSection==='all'?'var(--surface-2)':'var(--surface)'}} onClick={()=>effSetSection('all')}>
             All <span className="subtle mono" style={{marginLeft:4}}>{allLeads.length}</span>
           </button>
-          {sections.map(s => (
-            <button key={s} className="btn btn-sm" style={{borderColor: section===s?'var(--text)':'var(--border)',background: section===s?'var(--surface-2)':'var(--surface)'}} onClick={()=>setSection(s)}>
+          {effSections.map(s => (
+            <button key={s} className="btn btn-sm" style={{borderColor: effSection===s?'var(--text)':'var(--border)',background: effSection===s?'var(--surface-2)':'var(--surface)'}} onClick={()=>effSetSection(s)}>
               {s} <span className="subtle mono" style={{marginLeft:4}}>{allLeads.filter(l=>(l.section||'')===s).length}</span>
             </button>
           ))}
         </div>
       )}
+
+      <div className="hstack gap-2" style={{marginBottom:14,flexWrap:'wrap'}}>
+        <FilterChip icon="user" label="Owner" value={ownerFilter} options={ownerOptions} onChange={setOwnerFilter}/>
+        <FilterChip icon="map_pin" label="Location" value={locationFilter} options={locationOptions} onChange={setLocationFilter}/>
+        <FilterChip icon="flame" label="Niche" value={nicheFilter} options={nicheOptions} onChange={setNicheFilter}/>
+      </div>
 
       <div style={{display:'flex',gap:12,overflowX:'auto',paddingBottom:16}}>
         {STAGES.map(s => (
