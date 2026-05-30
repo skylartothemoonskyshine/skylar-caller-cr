@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Skylar Partners — Portfolio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --blue:#1d4ed8;
+    --blue-deep:#0b1d63;
+    --ink:#0a0a0a;
+    --paper:#ffffff;
+    --muted:#6b7280;
+    --card:#f3f4f6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#1a1a1a;font-family:'Inter',system-ui,sans-serif;color:var(--ink)}
+  @page{size:A4 landscape;margin:0}
+  .page{
+    width:297mm;height:210mm;
+    background:var(--paper);
+    position:relative;overflow:hidden;
+    page-break-after:always;break-after:page;
+    margin:8mm auto;box-shadow:0 6px 30px rgba(0,0,0,.35);
+  }
+  @media print{
+    body{background:#fff}
+    .page{margin:0;box-shadow:none}
+  }
+
+  /* shared */
+  .display{font-family:'Anton',sans-serif;letter-spacing:.01em;line-height:.92;text-transform:uppercase}
+  .pill{display:inline-block;padding:8px 22px;border-radius:999px;background:var(--blue);color:#fff;font-weight:600;letter-spacing:.18em;font-size:11px;text-transform:uppercase}
+  .muted{color:var(--muted)}
+  .accent{color:var(--blue)}
+
+  /* cover */
+  .cover{
+    background:
+      radial-gradient(1200px 800px at 70% 20%, rgba(29,78,216,.55), transparent 60%),
+      radial-gradient(900px 700px at 20% 90%, rgba(11,29,99,.65), transparent 55%),
+      linear-gradient(135deg,#05060a 0%,#0a0f1f 60%,#0a0a0a 100%);
+    color:#fff;
+  }
+  .cover .grid{
+    position:absolute;inset:0;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,.04) 1px, transparent 1px);
+    background-size:40px 40px;
+    mask-image:radial-gradient(ellipse at center, #000 40%, transparent 80%);
+  }
+  .cover .word{position:absolute;left:18mm;top:38mm;font-size:230px}
+  .cover .word .line2{display:block;color:transparent;-webkit-text-stroke:2px rgba(255,255,255,.45)}
+  .cover .pill-wrap{position:absolute;left:20mm;bottom:24mm}
+  .cover .pill-wrap .pill{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.25);backdrop-filter:blur(6px)}
+  .cover .meta{position:absolute;right:18mm;bottom:24mm;text-align:right;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.7)}
+
+  /* intro */
+  .intro{display:grid;grid-template-columns:42% 58%;height:100%}
+  .intro .left{
+    background:
+      radial-gradient(800px 600px at 30% 30%, rgba(29,78,216,.5), transparent 60%),
+      linear-gradient(160deg,#06080f,#0a0a0a);
+    position:relative;color:#fff
+  }
+  .intro .left .stamp{position:absolute;left:18mm;bottom:18mm;font-size:11px;letter-spacing:.25em;text-transform:uppercase;color:rgba(255,255,255,.65)}
+  .intro .right{padding:30mm 22mm;display:flex;flex-direction:column;justify-content:center}
+  .intro h1{font-family:'Anton',sans-serif;font-size:78px;line-height:.95;text-transform:uppercase;color:var(--ink)}
+  .intro .sub{margin-top:6mm;font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:var(--blue);font-weight:600}
+  .intro p{margin-top:10mm;font-size:14px;line-height:1.65;color:#222;max-width:120mm}
+  .intro .rule{width:18mm;height:3px;background:var(--blue);margin-top:12mm}
+
+  /* TOC */
+  .toc{padding:22mm 22mm 22mm 22mm;background:#fafbff;height:100%;position:relative}
+  .toc h2{font-family:'Anton',sans-serif;font-size:88px;color:var(--blue-deep);line-height:.95}
+  .toc .rule{width:60mm;height:4px;background:var(--blue);margin:6mm 0 14mm}
+  .toc-row{display:grid;grid-template-columns:24mm 1fr;align-items:center;background:#fff;border:1px solid #e5e7eb;border-left:6px solid var(--blue);margin-bottom:6mm;border-radius:6px;overflow:hidden}
+  .toc-row .num{font-family:'Anton',sans-serif;font-size:48px;color:var(--blue);text-align:center;background:#eef2ff;padding:8mm 0;border-right:1px solid #e5e7eb}
+  .toc-row .label{font-size:22px;font-weight:700;letter-spacing:.04em;padding:0 10mm;color:var(--ink)}
+  .toc-row .label small{display:block;font-weight:500;font-size:12px;color:var(--muted);margin-top:1mm;letter-spacing:.04em;text-transform:none}
+
+  /* divider page */
+  .divider{
+    background:
+      radial-gradient(900px 700px at 80% 80%, rgba(29,78,216,.45), transparent 60%),
+      linear-gradient(135deg,#06080f 0%,#0a0a0a 100%);
+    color:#fff;position:relative;height:100%;
+  }
+  .divider .num-tag{position:absolute;left:18mm;top:18mm;border:1.5px solid rgba(255,255,255,.65);padding:4mm 8mm;font-family:'Anton',sans-serif;font-size:30px}
+  .divider .big{position:absolute;left:18mm;top:60mm;font-family:'Anton',sans-serif;font-size:200px;line-height:.85}
+  .divider .big .echo{display:block;color:transparent;-webkit-text-stroke:2px rgba(255,255,255,.35)}
+  .divider .card{position:absolute;left:18mm;bottom:22mm;background:rgba(29,78,216,.92);color:#fff;padding:10mm 12mm;border-radius:6px;max-width:120mm}
+  .divider .card .rule{width:14mm;height:2px;background:#fff;margin-bottom:5mm}
+  .divider .card p{font-size:13px;line-height:1.6}
+  .divider .card .next{margin-top:5mm;letter-spacing:.2em;text-transform:uppercase;font-size:11px;opacity:.85}
+
+  /* showcase */
+  .showcase{padding:0;height:100%;position:relative;background:#eef2ff}
+  .showcase .frame{position:absolute;inset:0;display:grid;grid-template-columns:6fr 4fr;gap:0}
+  .showcase .desk{
+    background:#fff;
+    background-size:cover;background-position:center top;
+    border-right:1px solid #e5e7eb;
+    position:relative;
+  }
+  .showcase .desk .placeholder,
+  .showcase .stack .ph{
+    width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:11px;letter-spacing:.2em;text-transform:uppercase;
+    background:repeating-linear-gradient(45deg,#f3f4f6 0 14px,#e5e7eb 14px 28px);
+  }
+  .showcase .stack{display:grid;grid-template-rows:1fr 1fr}
+  .showcase .stack .mob{background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:center;padding:14mm}
+  .showcase .stack .mob .phone{
+    width:60mm;height:115mm;border-radius:14mm/8mm;background:#0a0a0a;padding:3mm;box-shadow:0 12px 30px rgba(0,0,0,.25);
+    display:flex;align-items:stretch;justify-content:stretch
+  }
+  .showcase .stack .mob .phone .screen{flex:1;border-radius:11mm/6mm;background:#fff;background-size:cover;background-position:center top;overflow:hidden}
+  .showcase .stack .info{background:#fff;padding:14mm 14mm}
+  .showcase .stack .info .num{display:inline-block;font-family:'Anton',sans-serif;color:var(--blue);font-size:14px;letter-spacing:.2em}
+  .showcase .stack .info h3{font-family:'Anton',sans-serif;font-size:42px;line-height:.95;margin-top:2mm;color:var(--ink)}
+  .showcase .stack .info .desc{font-size:11.5px;line-height:1.55;color:#374151;margin-top:5mm}
+  .showcase .stack .info .feat{margin-top:5mm;display:grid;grid-template-columns:1fr 1fr;gap:2mm 6mm}
+  .showcase .stack .info .feat div{font-size:10px;color:#111;padding-left:5mm;position:relative;line-height:1.4}
+  .showcase .stack .info .feat div:before{content:"";position:absolute;left:0;top:5px;width:3mm;height:3mm;background:var(--blue);border-radius:50%}
+  .showcase .stack .info .cta{margin-top:6mm;display:inline-block;padding:3mm 7mm;background:var(--blue);color:#fff;font-size:11px;letter-spacing:.15em;text-transform:uppercase;border-radius:999px;font-weight:600}
+  .showcase .footer-band{position:absolute;left:0;right:0;bottom:0;height:8mm;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 14mm;font-size:9.5px;letter-spacing:.25em;text-transform:uppercase}
+
+  /* closer */
+  .closer{
+    background:
+      radial-gradient(900px 700px at 30% 30%, rgba(29,78,216,.55), transparent 60%),
+      linear-gradient(135deg,#06080f 0%,#0a0a0a 100%);
+    color:#fff;height:100%;position:relative;
+  }
+  .closer .big{position:absolute;left:18mm;top:50mm;font-family:'Anton',sans-serif;font-size:160px;line-height:.9}
+  .closer .sub{position:absolute;left:18mm;top:130mm;max-width:160mm;font-size:14px;line-height:1.6;color:rgba(255,255,255,.85)}
+  .closer .contact{position:absolute;left:18mm;bottom:22mm;font-size:12px;letter-spacing:.05em}
+  .closer .contact b{font-weight:700}
+  .closer .pill-wrap{position:absolute;right:18mm;top:18mm}
+  .closer .pill-wrap .pill{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.25)}
+</style>
+</head>
+<body>
+
+<!-- 1. COVER -->
+<section class="page cover">
+  <div class="grid"></div>
+  <div class="word display">
+    <span>PORT</span><br>
+    <span class="line2">FOLIO</span>
+  </div>
+  <div class="pill-wrap"><span class="pill">Skylar Partners</span></div>
+  <div class="meta">2024 — 2026<br>Web Design Portfolio</div>
+</section>
+
+<!-- 2. INTRO -->
+<section class="page intro">
+  <div class="left">
+    <div class="stamp">Skylar Partners · Portfolio</div>
+  </div>
+  <div class="right">
+    <div class="sub">Hello, business owner</div>
+    <h1>Websites that<br>do the selling<br>for you.</h1>
+    <div class="rule"></div>
+    <p>We design and build websites for owner-operated businesses — clean, fast, and focused on the one thing that matters: turning visitors into booked calls. Below are five recent projects we&rsquo;re proud of. Take a look.</p>
+  </div>
+</section>
+
+<!-- 3. TABLE OF CONTENTS -->
+<section class="page toc">
+  <h2>Table<br>of Content</h2>
+  <div class="rule"></div>
+
+  <div class="toc-row"><div class="num">01</div><div class="label">Site Name One <small>Industry · One-line description</small></div></div>
+  <div class="toc-row"><div class="num">02</div><div class="label">Site Name Two <small>Industry · One-line description</small></div></div>
+  <div class="toc-row"><div class="num">03</div><div class="label">Site Name Three <small>Industry · One-line description</small></div></div>
+  <div class="toc-row"><div class="num">04</div><div class="label">Site Name Four <small>Industry · One-line description</small></div></div>
+  <div class="toc-row"><div class="num">05</div><div class="label">Site Name Five <small>Industry · One-line description</small></div></div>
+</section>
+
+<!-- 4. SITE 01 — DIVIDER -->
+<section class="page divider">
+  <div class="num-tag">01</div>
+  <div class="big">
+    <span>Project</span>
+    <span class="echo">Project</span>
+  </div>
+  <div class="card">
+    <div class="rule"></div>
+    <p><b>Site Name One</b> &mdash; one-paragraph hook describing what the business does and what the website needed to solve.</p>
+    <div class="next">Take a look &raquo;&raquo;</div>
+  </div>
+</section>
+
+<!-- 5. SITE 01 — SHOWCASE -->
+<section class="page showcase">
+  <div class="frame">
+    <div class="desk" style="background-image:url('pdf-assets/site-1/desktop.png')">
+      <div class="placeholder">Desktop screenshot &mdash; pdf-assets/site-1/desktop.png</div>
+    </div>
+    <div class="stack">
+      <div class="mob">
+        <div class="phone"><div class="screen" style="background-image:url('pdf-assets/site-1/mobile.png')"></div></div>
+      </div>
+      <div class="info">
+        <span class="num">01</span>
+        <h3>Site Name One</h3>
+        <div class="desc">One or two sentence description of the business and what the website needed to do for them.</div>
+        <div class="feat">
+          <div>Feature one</div>
+          <div>Feature two</div>
+          <div>Feature three</div>
+          <div>Feature four</div>
+        </div>
+        <span class="cta">Book a call</span>
+      </div>
+    </div>
+  </div>
+  <div class="footer-band"><span>Skylar Partners</span><span>01 / 05</span></div>
+</section>
+
+<!-- 6. SITE 02 — DIVIDER -->
+<section class="page divider">
+  <div class="num-tag">02</div>
+  <div class="big">
+    <span>Project</span>
+    <span class="echo">Project</span>
+  </div>
+  <div class="card">
+    <div class="rule"></div>
+    <p><b>Site Name Two</b> &mdash; one-paragraph hook describing what the business does and what the website needed to solve.</p>
+    <div class="next">Take a look &raquo;&raquo;</div>
+  </div>
+</section>
+
+<!-- 7. SITE 02 — SHOWCASE -->
+<section class="page showcase">
+  <div class="frame">
+    <div class="desk" style="background-image:url('pdf-assets/site-2/desktop.png')">
+      <div class="placeholder">Desktop screenshot &mdash; pdf-assets/site-2/desktop.png</div>
+    </div>
+    <div class="stack">
+      <div class="mob">
+        <div class="phone"><div class="screen" style="background-image:url('pdf-assets/site-2/mobile.png')"></div></div>
+      </div>
+      <div class="info">
+        <span class="num">02</span>
+        <h3>Site Name Two</h3>
+        <div class="desc">One or two sentence description of the business and what the website needed to do for them.</div>
+        <div class="feat">
+          <div>Feature one</div>
+          <div>Feature two</div>
+          <div>Feature three</div>
+          <div>Feature four</div>
+        </div>
+        <span class="cta">Get a quote</span>
+      </div>
+    </div>
+  </div>
+  <div class="footer-band"><span>Skylar Partners</span><span>02 / 05</span></div>
+</section>
+
+<!-- 8. SITE 03 — DIVIDER -->
+<section class="page divider">
+  <div class="num-tag">03</div>
+  <div class="big">
+    <span>Project</span>
+    <span class="echo">Project</span>
+  </div>
+  <div class="card">
+    <div class="rule"></div>
+    <p><b>Site Name Three</b> &mdash; one-paragraph hook describing what the business does and what the website needed to solve.</p>
+    <div class="next">Take a look &raquo;&raquo;</div>
+  </div>
+</section>
+
+<!-- 9. SITE 03 — SHOWCASE -->
+<section class="page showcase">
+  <div class="frame">
+    <div class="desk" style="background-image:url('pdf-assets/site-3/desktop.png')">
+      <div class="placeholder">Desktop screenshot &mdash; pdf-assets/site-3/desktop.png</div>
+    </div>
+    <div class="stack">
+      <div class="mob">
+        <div class="phone"><div class="screen" style="background-image:url('pdf-assets/site-3/mobile.png')"></div></div>
+      </div>
+      <div class="info">
+        <span class="num">03</span>
+        <h3>Site Name Three</h3>
+        <div class="desc">One or two sentence description of the business and what the website needed to do for them.</div>
+        <div class="feat">
+          <div>Feature one</div>
+          <div>Feature two</div>
+          <div>Feature three</div>
+          <div>Feature four</div>
+        </div>
+        <span class="cta">Start now</span>
+      </div>
+    </div>
+  </div>
+  <div class="footer-band"><span>Skylar Partners</span><span>03 / 05</span></div>
+</section>
+
+<!-- 10. SITE 04 — DIVIDER -->
+<section class="page divider">
+  <div class="num-tag">04</div>
+  <div class="big">
+    <span>Project</span>
+    <span class="echo">Project</span>
+  </div>
+  <div class="card">
+    <div class="rule"></div>
+    <p><b>Site Name Four</b> &mdash; one-paragraph hook describing what the business does and what the website needed to solve.</p>
+    <div class="next">Take a look &raquo;&raquo;</div>
+  </div>
+</section>
+
+<!-- 11. SITE 04 — SHOWCASE -->
+<section class="page showcase">
+  <div class="frame">
+    <div class="desk" style="background-image:url('pdf-assets/site-4/desktop.png')">
+      <div class="placeholder">Desktop screenshot &mdash; pdf-assets/site-4/desktop.png</div>
+    </div>
+    <div class="stack">
+      <div class="mob">
+        <div class="phone"><div class="screen" style="background-image:url('pdf-assets/site-4/mobile.png')"></div></div>
+      </div>
+      <div class="info">
+        <span class="num">04</span>
+        <h3>Site Name Four</h3>
+        <div class="desc">One or two sentence description of the business and what the website needed to do for them.</div>
+        <div class="feat">
+          <div>Feature one</div>
+          <div>Feature two</div>
+          <div>Feature three</div>
+          <div>Feature four</div>
+        </div>
+        <span class="cta">Book a demo</span>
+      </div>
+    </div>
+  </div>
+  <div class="footer-band"><span>Skylar Partners</span><span>04 / 05</span></div>
+</section>
+
+<!-- 12. SITE 05 — DIVIDER -->
+<section class="page divider">
+  <div class="num-tag">05</div>
+  <div class="big">
+    <span>Project</span>
+    <span class="echo">Project</span>
+  </div>
+  <div class="card">
+    <div class="rule"></div>
+    <p><b>Site Name Five</b> &mdash; one-paragraph hook describing what the business does and what the website needed to solve.</p>
+    <div class="next">Take a look &raquo;&raquo;</div>
+  </div>
+</section>
+
+<!-- 13. SITE 05 — SHOWCASE -->
+<section class="page showcase">
+  <div class="frame">
+    <div class="desk" style="background-image:url('pdf-assets/site-5/desktop.png')">
+      <div class="placeholder">Desktop screenshot &mdash; pdf-assets/site-5/desktop.png</div>
+    </div>
+    <div class="stack">
+      <div class="mob">
+        <div class="phone"><div class="screen" style="background-image:url('pdf-assets/site-5/mobile.png')"></div></div>
+      </div>
+      <div class="info">
+        <span class="num">05</span>
+        <h3>Site Name Five</h3>
+        <div class="desc">One or two sentence description of the business and what the website needed to do for them.</div>
+        <div class="feat">
+          <div>Feature one</div>
+          <div>Feature two</div>
+          <div>Feature three</div>
+          <div>Feature four</div>
+        </div>
+        <span class="cta">Contact us</span>
+      </div>
+    </div>
+  </div>
+  <div class="footer-band"><span>Skylar Partners</span><span>05 / 05</span></div>
+</section>
+
+<!-- 14. CLOSER -->
+<section class="page closer">
+  <div class="pill-wrap"><span class="pill">Skylar Partners</span></div>
+  <div class="big">Let&rsquo;s<br>build<br>yours.</div>
+  <div class="sub">Thanks for taking a look. If anything in here sparked an idea for your own business, the next step is a 15-minute call &mdash; no pitch, just a conversation about what would actually move the needle for you.</div>
+  <div class="contact">
+    <b>Skylar Partners</b><br>
+    hello@skylarpartners.com &middot; +1 (000) 000-0000<br>
+    skylarpartners.com
+  </div>
+</section>
+
+</body>
+</html>
