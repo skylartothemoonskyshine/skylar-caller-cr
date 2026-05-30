@@ -20,10 +20,7 @@ const LeadDetailA = ({ lead, onCall, onBack, onQuickLog, onSMS, onEdit }) => {
 
   const markFollowupDone = () => store.clearFollowup(lead.id);
   const rescheduleFollowup = () => {
-    const due = new Date();
-    due.setDate(due.getDate() + 3);
-    due.setHours(10, 0, 0, 0);
-    store.setTask(lead.id, due, 'Call follow-up');
+    store.setTask(lead.id, new Date(), 'Call follow-up');
   };
 
   return (
@@ -268,7 +265,7 @@ const LeadDetailA = ({ lead, onCall, onBack, onQuickLog, onSMS, onEdit }) => {
             <div className="card">
               <div style={{padding:'14px 16px'}}>
                 <div className="subtle" style={{fontSize:11,textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:500,marginBottom:6}}>No follow-up scheduled</div>
-                <button className="btn btn-sm" onClick={rescheduleFollowup}>Schedule in 3 days</button>
+                <button className="btn btn-sm" onClick={rescheduleFollowup}>Schedule today</button>
               </div>
             </div>
           )}
@@ -396,8 +393,7 @@ const LeadDetailB = ({ lead, onCall, onBack, onQuickLog, onSMS, onEdit }) => {
               <button className="btn btn-sm" onClick={onSMS}><Icon name="message" size={12}/> SMS</button>
               <button className="btn btn-sm" onClick={post}><Icon name="note" size={12}/> Note</button>
               <button className="btn btn-sm" onClick={() => {
-                const due = new Date(); due.setDate(due.getDate() + 3); due.setHours(10,0,0,0);
-                store.setTask(lead.id, due, 'Call follow-up');
+                store.setTask(lead.id, new Date(), 'Call follow-up');
               }}><Icon name="calendar" size={12}/> Follow-up</button>
               <div style={{marginLeft:'auto'}}><button className="btn btn-primary btn-sm" onClick={post} disabled={!noteDraft.trim()} style={{opacity: noteDraft.trim() ? 1 : 0.5}}>Post</button></div>
             </div>
