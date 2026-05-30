@@ -16,19 +16,24 @@ module.exports = async (req, res) => {
       res.end(JSON.stringify({ error: 'POST required' }));
       return;
     }
-    const { to, body, leadId } = req.body || {};
-    if (!to || !body) {
+    const { to, body, leadId, mediaUrl } = req.body || {};
+    if (!to || (!body && !mediaUrl)) {
       res.statusCode = 400;
       res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ error: 'to and body are required' }));
+      res.end(JSON.stringify({ error: 'to and (body or mediaUrl) are required' }));
       return;
     }
 
-    const msg = await client().messages.create({
+    const msgParams = {
       from: env('TWILIO_FROM_NUMBER'),
       to,
-      body,
-    });
+      body: body || '',
+    };
+    if (mediaUrl) {
+      msgParams.mediaUrl = Array.isArray(mediaUrl) ? mediaUrl : [mediaUrl];
+    }
+
+    const msg = await client().messages.create(msgParams);
 
     res.statusCode = 200;
     res.setHeader('content-type', 'application/json');
@@ -38,6 +43,7 @@ module.exports = async (req, res) => {
       to: msg.to,
       from: msg.from,
       body: msg.body,
+      mediaUrl: msgParams.mediaUrl || null,
       leadId: leadId || null,
     }));
   } catch (e) {

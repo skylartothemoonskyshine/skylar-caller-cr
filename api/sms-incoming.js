@@ -46,12 +46,14 @@ module.exports = async (req, res) => {
     }
     const params = { ...(req.query || {}), ...(req.body || {}) };
     const from = params.From;
-    const body = params.Body;
+    const body = params.Body || '';
     const sid = params.MessageSid;
     const status = params.SmsStatus || params.MessageStatus || null;
+    const numMedia = parseInt(params.NumMedia || '0', 10);
+    const mediaUrl = numMedia > 0 ? (params.MediaUrl0 || null) : null;
 
-    if (!from || !body || !sid) {
-      console.warn('[/api/sms-incoming] missing From/Body/MessageSid', { from, sid });
+    if (!from || (!body && !mediaUrl) || !sid) {
+      console.warn('[/api/sms-incoming] missing From/MessageSid or (Body and MediaUrl)', { from, sid });
       respond();
       return;
     }
@@ -75,6 +77,7 @@ module.exports = async (req, res) => {
       body,
       sid,
       status,
+      media_url: mediaUrl,
     });
     if (ins.error) console.error('[/api/sms-incoming] insert messages failed', ins.error);
     else console.log(`[/api/sms-incoming] saved inbound SMS ${sid} for lead ${lead.id}`);

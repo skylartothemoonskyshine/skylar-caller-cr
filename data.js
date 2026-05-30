@@ -228,6 +228,16 @@ function noteToRow(n) {
   };
 }
 
+function repFromRow(r) {
+  return {
+    id: r.id,
+    name: r.name || '',
+    initials: r.initials || '',
+    role: r.role || 'caller',
+    directorId: r.director_id || null,
+  };
+}
+
 function messageFromRow(r) {
   return {
     id: r.id,
@@ -237,6 +247,7 @@ function messageFromRow(r) {
     at: new Date(r.at),
     sid: r.sid,
     status: r.status,
+    mediaUrl: r.media_url || null,
   };
 }
 function messageToRow(m) {
@@ -248,6 +259,7 @@ function messageToRow(m) {
     at: (m.at instanceof Date ? m.at : new Date()).toISOString(),
     sid: m.sid || null,
     status: m.status || null,
+    media_url: m.mediaUrl || null,
   };
 }
 
@@ -344,7 +356,7 @@ const store = {
     const { data: reps, error: repsErr } = await sb.from('reps').select('*');
     logErr('reps select', repsErr);
     REPS.length = 0;
-    REPS.push(...(reps || []));
+    REPS.push(...((reps || []).map(repFromRow)));
     Object.keys(REP_OF).forEach(k => delete REP_OF[k]);
     for (const r of REPS) REP_OF[r.id] = r;
 
@@ -381,7 +393,35 @@ const store = {
       const local = messageFromRow(m);
       (this.messages[local.leadId] ||= []).push(local);
     }
+    this.setupRealtimeMessages();
     this.dirty();
+  },
+
+  setupRealtimeMessages() {
+    sb.channel('messages-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const msg = messageFromRow(payload.new);
+        if (!this.messages[msg.leadId]) this.messages[msg.leadId] = [];
+        if (!this.messages[msg.leadId].find(m => m.id === msg.id)) {
+          this.messages[msg.leadId].push(msg);
+          this.dirty();
+        }
+      })
+      .subscribe();
+  },
+
+  async uploadMmsMedia(file) {
+    if (!file) throw new Error('No file provided');
+    const ext = (file.name || 'jpg').split('.').pop() || 'jpg';
+    const path = `${crypto.randomUUID()}.${ext}`;
+    const { error } = await sb.storage.from('mms-media').upload(path, file, {
+      contentType: file.type || 'application/octet-stream',
+      cacheControl: '3600',
+      upsert: false,
+    });
+    if (error) throw error;
+    const { data } = sb.storage.from('mms-media').getPublicUrl(path);
+    return data.publicUrl;
   },
 
   clearLocal() {
@@ -411,13 +451,20 @@ const store = {
   isOwner() {
     return REP_OF[this.me]?.role === 'owner';
   },
+  isDirector() {
+    return REP_OF[this.me]?.role === 'director';
+  },
+  myWorkerIds() {
+    return REPS.filter(r => r.directorId === this.me).map(r => r.id);
+  },
   effectiveMe() {
     return this.viewingAs || this.me;
   },
   setViewingAs(repId) {
-    if (!this.isOwner()) return;
+    if (!this.isOwner() && !this.isDirector()) return;
     if (!repId || repId === this.me) return;
     if (!REP_OF[repId]) return;
+    if (this.isDirector() && REP_OF[repId]?.directorId !== this.me) return;
     this.viewingAs = repId;
     this.dirty();
   },
@@ -431,6 +478,11 @@ const store = {
   // workers — and owner while viewing-as — see only leads assigned to them.
   visibleLeads() {
     if (this.isOwner() && !this.viewingAs) return this.leads;
+    if (this.isDirector() && !this.viewingAs) {
+      const scope = new Set(this.myWorkerIds());
+      scope.add(this.me);
+      return this.leads.filter(l => scope.has(l.ownerId));
+    }
     const scope = this.effectiveMe();
     return this.leads.filter(l => l.ownerId === scope);
   },

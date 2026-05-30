@@ -28,6 +28,15 @@ const PhonePage = ({ onCall, onSMS, onOpenLead }) => {
   const back = () => setDial(d => d.slice(0, -1));
   const clear = () => setDial('');
 
+  const onPaste = (e) => {
+    const text = e.clipboardData.getData('text');
+    const sanitized = text.replace(/[^0-9+*#]/g, '').slice(0, 20);
+    if (sanitized) {
+      e.preventDefault();
+      setDial(sanitized);
+    }
+  };
+
   // resolve: if the dialed number matches a lead's phone, use that lead; else ad-hoc.
   // Ad-hoc ids are stable per normalized phone so repeated dials share SMS history.
   const resolveTarget = () => {
@@ -79,7 +88,7 @@ const PhonePage = ({ onCall, onSMS, onOpenLead }) => {
 
       <div style={{display:'grid',gridTemplateColumns:'minmax(320px, 420px) 1fr',gap:24,alignItems:'flex-start'}}>
         {/* dialpad card */}
-        <div className="card" style={{padding:24}}>
+        <div className="card" style={{padding:24}} onPaste={onPaste}>
           <div style={{
             height:72,
             display:'flex',
@@ -159,7 +168,7 @@ const PhonePage = ({ onCall, onSMS, onOpenLead }) => {
           </button>
 
           <div className="subtle" style={{fontSize:11,textAlign:'center',marginTop:12}}>
-            Type on your keyboard or tap the keys · <span className="kbd">Enter</span> to call
+            Type, paste, or tap · <span className="kbd">Enter</span> to call
           </div>
         </div>
 

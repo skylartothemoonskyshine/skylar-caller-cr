@@ -60,8 +60,14 @@ const Icon = ({ name, size = 16, stroke = 1.6, style, ...rest }) => {
 const Sidebar = ({ current, onNav, counts = {}, me, viewingAs, onSignOut, onSetViewingAs }) => {
   const realRep = REP_OF[me] || REPS[0] || { initials: '?', name: '', role: 'caller' };
   const isOwner = realRep.role === 'owner';
+  const isDirector = realRep.role === 'director';
+  const canViewAs = isOwner || isDirector;
   const viewedRep = viewingAs ? REP_OF[viewingAs] : null;
-  const workers = REPS.filter(r => r.id !== me && r.role !== 'owner');
+  const workers = isOwner
+    ? REPS.filter(r => r.id !== me && r.role !== 'owner')
+    : isDirector
+      ? REPS.filter(r => r.directorId === me)
+      : [];
   const items = [
     { id: 'dashboard', label: 'Dashboard', icon: 'home', kbd: 'G D' },
     { id: 'phone', label: 'Phone', icon: 'phone_call', kbd: 'G F' },
@@ -111,7 +117,7 @@ const Sidebar = ({ current, onNav, counts = {}, me, viewingAs, onSignOut, onSetV
         ))}
       </div>
 
-      {isOwner && !viewingAs && workers.length > 0 && (
+      {canViewAs && !viewingAs && workers.length > 0 && (
         <div className="nav-section">
           <div className="nav-label">View as</div>
           {workers.map(w => (

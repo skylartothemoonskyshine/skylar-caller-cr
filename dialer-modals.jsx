@@ -310,27 +310,62 @@ const UnconfiguredDialer = ({ lead, onClose, onLog }) => {
 const SMSModal = ({ lead, onClose, onSent }) => {
   const [body, setBody] = React.useState('');
   const [sending, setSending] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+  const [mediaFile, setMediaFile] = React.useState(null);
+  const [mediaPreview, setMediaPreview] = React.useState(null);
   const [err, setErr] = React.useState(null);
+  const fileRef = React.useRef(null);
   const history = store.getMessages(lead.id);
 
+  React.useEffect(() => {
+    return () => {
+      if (mediaPreview) URL.revokeObjectURL(mediaPreview);
+    };
+  }, []);
+
+  const onFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setMediaFile(file);
+    if (mediaPreview) URL.revokeObjectURL(mediaPreview);
+    setMediaPreview(URL.createObjectURL(file));
+    e.target.value = '';
+  };
+
+  const clearMedia = () => {
+    if (mediaPreview) URL.revokeObjectURL(mediaPreview);
+    setMediaFile(null);
+    setMediaPreview(null);
+  };
+
   const send = async () => {
-    if (!body.trim() || sending) return;
+    if ((!body.trim() && !mediaFile) || sending || uploading) return;
     setSending(true); setErr(null);
     try {
+      let mediaUrl = null;
+      if (mediaFile) {
+        setUploading(true);
+        mediaUrl = await store.uploadMmsMedia(mediaFile);
+        setUploading(false);
+      }
+      const payload = { to: normalizePhone(lead.phone), body, leadId: lead.id };
+      if (mediaUrl) payload.mediaUrl = [mediaUrl];
       const r = await fetch('/api/sms', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ to: normalizePhone(lead.phone), body, leadId: lead.id }),
+        body: JSON.stringify(payload),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-      store.addMessage(lead.id, { direction: 'out', body, sid: data.sid, status: data.status });
+      store.addMessage(lead.id, { direction: 'out', body, sid: data.sid, status: data.status, mediaUrl: mediaUrl || null });
       setBody('');
+      clearMedia();
       onSent && onSent();
     } catch (e) {
       setErr(String(e.message || e));
     } finally {
       setSending(false);
+      setUploading(false);
     }
   };
 
@@ -367,7 +402,11 @@ const SMSModal = ({ lead, onClose, onSent }) => {
                     fontSize:12.5,
                     lineHeight:1.4,
                   }}>
-                    <div>{m.body}</div>
+                    {m.mediaUrl && (
+                      <img src={m.mediaUrl} alt="MMS" style={{display:'block',maxWidth:'100%',maxHeight:200,borderRadius:6,marginBottom: m.body ? 6 : 0,objectFit:'contain'}}
+                        onError={e => { e.currentTarget.style.display = 'none'; }}/>
+                    )}
+                    {m.body && <div>{m.body}</div>}
                     <div style={{fontSize:10,opacity:0.7,marginTop:4}}>{relativeString(m.at)}{m.status ? ` · ${m.status}` : ''}</div>
                   </div>
                 </div>
@@ -384,6 +423,26 @@ const SMSModal = ({ lead, onClose, onSent }) => {
             onKeyDown={onKey}
             style={{resize:'vertical',minHeight:100}}
           />
+          <div className="hstack gap-2" style={{marginTop:8}}>
+            <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}} onChange={onFileChange}/>
+            <button className="btn btn-sm" onClick={() => fileRef.current?.click()} title="Attach image (MMS)">
+              <Icon name="image" size={12}/> Image
+            </button>
+            {mediaFile && (
+              <span className="subtle" style={{fontSize:11,flex:1}}>{mediaFile.name}</span>
+            )}
+            {mediaFile && (
+              <button className="iconbtn" onClick={clearMedia} title="Remove image" style={{padding:'4px 6px'}}>
+                <Icon name="close" size={12}/>
+              </button>
+            )}
+          </div>
+          {mediaPreview && (
+            <div style={{marginTop:8}}>
+              <img src={mediaPreview} alt="Preview"
+                style={{maxWidth:'100%',maxHeight:180,borderRadius:8,border:'1px solid var(--border)',objectFit:'contain'}}/>
+            </div>
+          )}
           <div className="hstack" style={{marginTop:6,justifyContent:'space-between'}}>
             <span className="subtle" style={{fontSize:11}}>{body.length} chars · {Math.max(1, Math.ceil(body.length / 160))} segment{body.length > 160 ? 's' : ''}</span>
           </div>
@@ -395,8 +454,8 @@ const SMSModal = ({ lead, onClose, onSent }) => {
         </div>
         <div className="modal-footer">
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={send} disabled={!body.trim() || sending} style={{opacity:(!body.trim() || sending) ? 0.5 : 1}}>
-            {sending ? 'Sending…' : 'Send'} <span className="kbd">⌘⏎</span>
+          <button className="btn btn-primary" onClick={send} disabled={(!body.trim() && !mediaFile) || sending || uploading} style={{opacity:((!body.trim() && !mediaFile) || sending || uploading) ? 0.5 : 1}}>
+            {uploading ? 'Uploading…' : sending ? 'Sending…' : 'Send'} <span className="kbd">⌘⏎</span>
           </button>
         </div>
       </div>

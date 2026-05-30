@@ -253,7 +253,8 @@ function App() {
   // Owner gets the manager overview when NOT viewing-as; while viewing-as (or for
   // regular callers) we show the caller cockpit — that's the "worker's POV".
   const isOwner = store.isOwner();
-  const showManagerDash = isOwner && !viewingAs;
+  const isDirector = store.isDirector();
+  const showManagerDash = (isOwner || isDirector) && !viewingAs;
   const viewedRep = viewingAs ? REP_OF[viewingAs] : null;
 
   // safety: the stored leadId might no longer exist (e.g., after CSV import)
