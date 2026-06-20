@@ -41,6 +41,7 @@ const DialerPanel = ({ lead, onClose, onLogged, onAdvance }) => {
   const [showKeypad, setShowKeypad] = React.useState(false);
   const [digitsSent, setDigitsSent] = React.useState('');
   const [err, setErr] = React.useState(null);
+  const [callerNumber, setCallerNumber] = React.useState(null);
   const [, setTick] = React.useState(0); // re-render once a second while connected
 
   // Refs so the unmount cleanup sees the latest values (closures would stale).
@@ -50,6 +51,23 @@ const DialerPanel = ({ lead, onClose, onLogged, onAdvance }) => {
   const acceptedAtRef = React.useRef(null);        // Date.now() when call connected
   const endedAtRef = React.useRef(null);           // Date.now() when call disconnected
   const callSidRef = React.useRef(null);           // Twilio CallSid for recording matching
+
+  // Fetch which caller number will be used for this call
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const identity = (window.store?.user?.email || '').split('@')[0];
+        const qs = identity ? `?identity=${encodeURIComponent(identity)}` : '';
+        const r = await fetch('/api/caller-number' + qs);
+        if (r.ok) {
+          const data = await r.json();
+          setCallerNumber(data.from);
+        }
+      } catch (e) {
+        console.error('[caller-number fetch]', e);
+      }
+    })();
+  }, []);
 
   // Kick off the call once the Device is ready.
   React.useEffect(() => {
@@ -200,6 +218,11 @@ const DialerPanel = ({ lead, onClose, onLogged, onAdvance }) => {
             <div className="dialer-name">{lead.fullName}</div>
             <div className="dialer-num">{lead.phone}</div>
             <div className="subtle ellipsis" style={{fontSize:11,marginTop:2}}>{lead.business}</div>
+            {callerNumber && (
+              <div className="subtle" style={{fontSize:10,marginTop:3,fontFamily:'JetBrains Mono, monospace',fontWeight:500}}>
+                📞 from {callerNumber}
+              </div>
+            )}
           </div>
         </div>
 
