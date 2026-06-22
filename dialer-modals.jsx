@@ -2,7 +2,7 @@
 
 // --- Twilio helper: fetch token, build Device ---
 // Returns { state: 'ready'|'unconfigured'|'error', device?, error? }
-async function initTwilioDevice(onError) {
+async function initTwilioDevice(onError, onIncoming) {
   if (!window.Twilio || !window.Twilio.Device) {
     return { state: 'error', error: 'Twilio Voice SDK failed to load' };
   }
@@ -25,6 +25,11 @@ async function initTwilioDevice(onError) {
         d.updateToken(t);
       } catch (e) { console.error('token refresh failed', e); }
     });
+    // Handle incoming calls
+    d.on('incoming', (call) => {
+      console.log('[incoming call]', call.parameters.From);
+      onIncoming && onIncoming(call);
+    });
     return { state: 'ready', device: d };
   } catch (e) {
     console.error(e);
@@ -32,7 +37,7 @@ async function initTwilioDevice(onError) {
   }
 }
 
-const DialerPanel = ({ lead, onClose, onLogged, onAdvance }) => {
+const DialerPanel = ({ lead, onClose, onLogged, onAdvance, onIncomingCall }) => {
   const [device, setDevice] = React.useState(null);
   const [call, setCall] = React.useState(null);
   const [callState, setCallState] = React.useState('preparing'); // preparing | dialing | connected | disconnected | failed | unconfigured
@@ -74,7 +79,7 @@ const DialerPanel = ({ lead, onClose, onLogged, onAdvance }) => {
     if (started.current) return;
     started.current = true;
     (async () => {
-      const result = await initTwilioDevice(setErr);
+      const result = await initTwilioDevice(setErr, onIncomingCall);
       if (result.state === 'unconfigured') { setCallState('unconfigured'); return; }
       if (result.state !== 'ready') { setCallState('failed'); setErr(result.error); return; }
       setDevice(result.device);
@@ -273,6 +278,127 @@ const DialerPanel = ({ lead, onClose, onLogged, onAdvance }) => {
 
         <div className="subtle" style={{fontSize:11,textAlign:'center',marginTop:10}}>
           Press <span className="kbd">L</span> to log · <span className="kbd">Esc</span> to hang up
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const IncomingCallModal = ({ incomingCall, onAccept, onReject }) => {
+  if (!incomingCall) return null;
+  const from = incomingCall.parameters?.From || 'Unknown';
+  return (
+    <div className="dialer">
+      <div className="dialer-head">
+        <div className="dialer-pulse" style={{width:12,height:12,borderRadius:'50%',background:'var(--green)'}}/>
+        <div style={{flex:1}}>
+          <div style={{fontSize:12,fontWeight:500}}>Incoming call</div>
+          <div className="dialer-timer">Ringing…</div>
+        </div>
+      </div>
+      <div className="dialer-body">
+        <div className="hstack gap-3">
+          <div style={{
+            width:48,height:48,borderRadius:'50%',background:'var(--green-soft)',
+            display:'grid',placeItems:'center',fontSize:24,fontWeight:600,color:'var(--green)'
+          }}>
+            📞
+          </div>
+          <div>
+            <div className="dialer-name" style={{fontSize:18}}>{from}</div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginTop:4}}>Calling you now</div>
+          </div>
+        </div>
+        <div className="dialer-actions" style={{marginTop:24}}>
+          <button onClick={onAccept}
+                  style={{
+                    flex:1,padding:'14px',background:'var(--green)',color:'white',border:'none',
+                    borderRadius:12,fontSize:15,fontWeight:600,cursor:'pointer',display:'flex',
+                    alignItems:'center',justifyContent:'center',gap:8
+                  }}>
+            <Icon name="phone_call" size={16}/>
+            Answer
+          </button>
+          <button onClick={onReject}
+                  style={{
+                    flex:1,padding:'14px',background:'var(--red)',color:'white',border:'none',
+                    borderRadius:12,fontSize:15,fontWeight:600,cursor:'pointer',display:'flex',
+                    alignItems:'center',justifyContent:'center',gap:8,marginTop:8
+                  }}>
+            <Icon name="phone_off" size={16}/>
+            Reject
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const IncomingCallActivePanel = ({ call, onClose }) => {
+  const [muted, setMuted] = React.useState(false);
+  const [duration, setDuration] = React.useState('0:00');
+  const [, setTick] = React.useState(0);
+  const startTimeRef = React.useRef(Date.now());
+
+  React.useEffect(() => {
+    const i = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(i);
+  }, []);
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      const sec = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+      const ss = String(sec % 60).padStart(2, '0');
+      setDuration(`${mm}:${ss}`);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const toggleMute = () => {
+    try { call.mute(!muted); setMuted(!muted); } catch (e) { console.error(e); }
+  };
+
+  const from = call.parameters?.From || 'Incoming call';
+
+  return (
+    <div className="dialer">
+      <div className="dialer-head">
+        <div className="dialer-pulse" style={{width:10,height:10,borderRadius:'50%',background:'var(--green)'}}/>
+        <div style={{flex:1}}>
+          <div style={{fontSize:12,fontWeight:500}}>Connected</div>
+          <div className="dialer-timer">{duration}</div>
+        </div>
+        <button className="iconbtn" onClick={onClose}><Icon name="close" size={14}/></button>
+      </div>
+      <div className="dialer-body">
+        <div className="hstack gap-3">
+          <div style={{
+            width:48,height:48,borderRadius:'50%',background:'var(--green-soft)',
+            display:'grid',placeItems:'center',fontSize:24,fontWeight:600,color:'var(--green)'
+          }}>
+            📞
+          </div>
+          <div>
+            <div className="dialer-name" style={{fontSize:16}}>{from}</div>
+            <div style={{fontSize:12,color:'var(--text-muted)',marginTop:4}}>Call in progress</div>
+          </div>
+        </div>
+
+        <div className="dialer-actions">
+          <button className="btn" onClick={toggleMute} style={{opacity: 1}}>
+            <Icon name={muted ? 'mic_off' : 'mic'} size={13}/>
+            {muted ? 'Unmute' : 'Mute'}
+          </button>
+        </div>
+
+        <button className="dialer-hangup" onClick={onClose}>
+          <Icon name="phone_off" size={14}/>
+          <span style={{marginLeft:6}}>End call</span>
+        </button>
+
+        <div className="subtle" style={{fontSize:11,textAlign:'center',marginTop:10}}>
+          Press <span className="kbd">Esc</span> to hang up
         </div>
       </div>
     </div>
@@ -685,4 +811,4 @@ const CommandPalette = ({ onClose, onNav, onOpenLead }) => {
   );
 };
 
-Object.assign(window, { DialerPanel, QuickLogModal, CommandPalette, SMSModal, normalizePhone });
+Object.assign(window, { DialerPanel, QuickLogModal, CommandPalette, SMSModal, IncomingCallModal, IncomingCallActivePanel, normalizePhone });

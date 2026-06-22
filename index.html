@@ -67,6 +67,8 @@ function App() {
   const [route, setRoute] = React.useState(() => localStorage.getItem('route') || 'dashboard');
   const [leadId, setLeadId] = React.useState(() => localStorage.getItem('leadId') || null);
   const [callingLead, setCallingLead] = React.useState(null);
+  const [incomingCall, setIncomingCall] = React.useState(null);
+  const [activeIncomingCall, setActiveIncomingCall] = React.useState(null);
   const [showLog, setShowLog] = React.useState(null);
   const [showPalette, setShowPalette] = React.useState(false);
   const [showNewLead, setShowNewLead] = React.useState(false);
@@ -312,11 +314,35 @@ function App() {
         {route === 'settings' && <SettingsPage/>}
       </div>
 
+      {incomingCall && !activeIncomingCall && <IncomingCallModal
+        incomingCall={incomingCall}
+        onAccept={() => {
+          incomingCall.accept();
+          setActiveIncomingCall(incomingCall);
+          setToast('Call answered');
+        }}
+        onReject={() => {
+          incomingCall.reject();
+          setIncomingCall(null);
+          setToast('Call rejected');
+        }}/>}
+      {activeIncomingCall && <IncomingCallActivePanel
+        call={activeIncomingCall}
+        onClose={() => {
+          try { activeIncomingCall.disconnect(); } catch {}
+          setActiveIncomingCall(null);
+          setIncomingCall(null);
+        }}/>}
       {callingLead && <DialerPanel
         lead={callingLead}
         onClose={() => setCallingLead(null)}
         onLogged={() => setToast('Call logged')}
-        onAdvance={advanceToNext}/>}
+        onAdvance={advanceToNext}
+        onIncomingCall={(call) => {
+          if (!activeIncomingCall && !incomingCall) {
+            setIncomingCall(call);
+          }
+        }}/>}
       {showLog && <QuickLogModal lead={showLog} onClose={() => setShowLog(null)} onSaved={() => { setShowLog(null); setToast('Call logged'); }}/>}
       {showPalette && <CommandPalette onClose={() => setShowPalette(false)} onNav={goTo} onOpenLead={openLead}/>}
       {showNewLead && <LeadFormModal onClose={() => setShowNewLead(false)} onCreated={(l) => { setToast(`Added ${l.fullName}`); openLead(l.id); }}/>}
