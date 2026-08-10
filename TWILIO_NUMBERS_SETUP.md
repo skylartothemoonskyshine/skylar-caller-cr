@@ -1,5 +1,11 @@
 # Twilio Numbers & Inbound Calling Setup
 
+> **Update:** caller-ID routing is now database-driven. Run `numbers_setup.sql`
+> in the Supabase SQL editor once, then manage number access per rep in the
+> app under **Settings → Team number access** (owner only). Each rep picks
+> their outbound number on the Phone page or in Settings ("Calling from").
+> The env-var routing below still works as a fallback until the SQL is run.
+
 ## Your 3 Twilio Numbers
 
 | Number | Region | Features | Current Use |

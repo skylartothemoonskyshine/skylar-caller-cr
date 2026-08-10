@@ -355,20 +355,83 @@ function App() {
   );
 }
 
-const SettingsPage = () => (
-  <div className="page">
-    <div className="page-header">
-      <div>
-        <div className="page-header-title">Settings</div>
-        <div className="page-header-sub">Workspace preferences live in the Tweaks panel (top-right)</div>
+// Settings — caller-ID preference for everyone, plus the owner-only grid
+// controlling which Twilio numbers each rep may call from (rep_numbers table).
+const SettingsPage = () => {
+  const numbers = store.callerNumbers;
+  const setupDone = numbers.length > 0;
+  const toggle = (rep, phone) => {
+    const current = store.repNumbers[rep.id] || [];
+    const next = current.includes(phone) ? current.filter(p => p !== phone) : [...current, phone];
+    store.setRepNumbers(rep.id, next);
+  };
+  return (
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <div className="page-header-title">Settings</div>
+          <div className="page-header-sub">Caller ID & team number access · theme lives in the Tweaks panel (top-right)</div>
+        </div>
+      </div>
+
+      <div className="vstack gap-4" style={{maxWidth:760}}>
+        <div className="card" style={{padding:20}}>
+          <h3 style={{marginBottom:4}}>My caller ID</h3>
+          <div className="subtle" style={{fontSize:12,marginBottom:12}}>
+            The number prospects see when you call them. "Default" lets the server pick your usual number.
+          </div>
+          {setupDone
+            ? <CallerIdSelect label="Calling from" style={{maxWidth:380}}/>
+            : <div className="subtle" style={{fontSize:12.5}}>
+                Number selection isn't enabled yet — run <span className="mono">numbers_setup.sql</span> in the Supabase SQL editor, then reload.
+              </div>}
+        </div>
+
+        {store.isOwner() && setupDone && (
+          <div className="card" style={{padding:20}}>
+            <h3 style={{marginBottom:4}}>Team number access</h3>
+            <div className="subtle" style={{fontSize:12,marginBottom:14}}>
+              Tick the numbers each rep may call from. Owners always have every number.
+              A rep with nothing ticked uses the default number.
+            </div>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+              <thead>
+                <tr>
+                  <th style={{textAlign:'left',padding:'8px 10px',borderBottom:'1px solid var(--border)'}}>Rep</th>
+                  {numbers.map(n => (
+                    <th key={n.phone} style={{textAlign:'center',padding:'8px 10px',borderBottom:'1px solid var(--border)',fontWeight:500}}>
+                      <div className="mono" style={{fontSize:12}}>{n.phone}</div>
+                      {n.label && <div className="subtle" style={{fontSize:10.5,fontWeight:400}}>{n.label}</div>}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {REPS.map(rep => (
+                  <tr key={rep.id}>
+                    <td style={{padding:'10px',borderBottom:'1px solid var(--border)'}}>
+                      <span style={{fontWeight:500}}>{rep.name}</span>
+                      <span className="subtle" style={{fontSize:11,marginLeft:6}}>{rep.role}</span>
+                    </td>
+                    {numbers.map(n => (
+                      <td key={n.phone} style={{textAlign:'center',padding:'10px',borderBottom:'1px solid var(--border)'}}>
+                        {rep.role === 'owner'
+                          ? <span className="subtle" title="Owners always have every number">✓</span>
+                          : <input type="checkbox"
+                              checked={(store.repNumbers[rep.id] || []).includes(n.phone)}
+                              onChange={() => toggle(rep, n.phone)}/>}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
-    <div className="card subtle" style={{padding:32,textAlign:'center'}}>
-      <Icon name="settings" size={20}/>
-      <div style={{fontSize:13,marginTop:8}} className="subtle">Full settings UI is out of scope for v1</div>
-    </div>
-  </div>
-);
+  );
+};
 
 const TweaksPanel = ({ tweaks, onChange, onClose, onReset }) => (
   <div className="tweaks">

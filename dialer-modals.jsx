@@ -62,7 +62,8 @@ const DialerPanel = ({ lead, onClose, onLogged, onAdvance, onIncomingCall }) => 
     (async () => {
       try {
         const identity = (window.store?.user?.email || '').split('@')[0];
-        const qs = identity ? `?identity=${encodeURIComponent(identity)}` : '';
+        const preferred = window.store?.getCallerIdPref?.() || '';
+        const qs = `?identity=${encodeURIComponent(identity)}&preferred=${encodeURIComponent(preferred)}`;
         const r = await fetch('/api/caller-number' + qs);
         if (r.ok) {
           const data = await r.json();
@@ -86,7 +87,13 @@ const DialerPanel = ({ lead, onClose, onLogged, onAdvance, onIncomingCall }) => 
       try {
         setCallState('dialing');
         const c = await result.device.connect({
-          params: { To: normalizePhone(lead.phone), leadId: lead.id },
+          params: {
+            To: normalizePhone(lead.phone),
+            leadId: lead.id,
+            // requested outbound number — voice.js validates it against the
+            // rep's allowlist before dialing, so passing it is safe.
+            callerId: window.store?.getCallerIdPref?.() || '',
+          },
         });
         dispatchedRef.current = true;
         setCall(c);

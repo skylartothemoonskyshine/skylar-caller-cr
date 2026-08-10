@@ -4,6 +4,7 @@
 // enables dual-channel recording from answer.
 
 const { env } = require('../lib/twilio');
+const { resolveCallerId } = require('../lib/caller-numbers');
 
 module.exports = async (req, res) => {
   try {
@@ -22,17 +23,10 @@ module.exports = async (req, res) => {
     // Twilio sends From as "client:<identity>" for Voice-SDK-initiated calls.
     const identity = String(params.From || '').replace(/^client:/, '');
 
-    // Per-rep number routing: check if this identity has a custom number
-    let from = env('TWILIO_FROM_NUMBER');
-    const rayanId = env('RAYAN_IDENTITY', false);
-    const caller2Id = env('CALLER2_IDENTITY', false);
-    if (rayanId && identity === rayanId) {
-      const rayanNum = env('TWILIO_FROM_NUMBER_RAYAN', false);
-      if (rayanNum) from = rayanNum;
-    } else if (caller2Id && identity === caller2Id) {
-      const caller2Num = env('TWILIO_FROM_NUMBER_CALLER2', false);
-      if (caller2Num) from = caller2Num;
-    }
+    // callerId is the rep's requested outbound number (from the dialer's
+    // picker). resolveCallerId validates it against their allowlist and
+    // falls back to their default — a rep can never spoof an unassigned number.
+    const { from } = await resolveCallerId(identity, params.callerId || '');
     const publicUrl = env('PUBLIC_URL', false) || '';
     const statusCallback = publicUrl ? `${publicUrl.replace(/\/$/, '')}/api/recording?leadId=${encodeURIComponent(leadId)}` : '';
 

@@ -235,6 +235,7 @@ function repFromRow(r) {
     initials: r.initials || '',
     role: r.role || 'caller',
     directorId: r.director_id || null,
+    username: r.username || '',
   };
 }
 
@@ -308,6 +309,8 @@ const store = {
   messages: {},
   me: null,             // user.id (uuid) — real audit identity, never mutated during view-as
   viewingAs: null,      // rep uuid an owner has temporarily "stepped into"; null otherwise
+  callerNumbers: [],    // pool of Twilio numbers [{phone, label}] (caller_numbers table)
+  repNumbers: {},       // repId -> [phone, ...] allowlist (rep_numbers table)
 
   // --- Auth ---
   // Supabase's password provider requires an email. We expose usernames in the
@@ -343,7 +346,8 @@ const store = {
     this.me = user.id;
 
     const email = user.email || '';
-    const name = user.user_metadata?.name || email.split('@')[0] || 'Caller';
+    const username = email.split('@')[0] || '';
+    const name = user.user_metadata?.name || username || 'Caller';
     const initials = deriveInitials(name);
     {
       // Insert a reps row if missing, but don't overwrite an existing one —
@@ -360,22 +364,37 @@ const store = {
     Object.keys(REP_OF).forEach(k => delete REP_OF[k]);
     for (const r of REPS) REP_OF[r.id] = r;
 
+    // Backfill username on my row if it predates numbers_setup.sql.
+    const mine = REP_OF[user.id];
+    if (mine && !mine.username && username) {
+      mine.username = username;
+      sb.from('reps').update({ username }).eq('id', user.id).then(({ error }) => logErr('reps username backfill', error));
+    }
+
     await this.hydrate();
   },
 
   async hydrate() {
-    const [leadsR, callsR, tasksR, notesR, msgsR] = await Promise.all([
+    const [leadsR, callsR, tasksR, notesR, msgsR, numsR, repNumsR] = await Promise.all([
       sb.from('leads').select('*').order('created_at', { ascending: false }),
       sb.from('call_logs').select('*').order('at', { ascending: false }),
       sb.from('tasks').select('*'),
       sb.from('notes').select('*').order('at', { ascending: false }),
       sb.from('messages').select('*').order('at'),
+      sb.from('caller_numbers').select('*').order('phone'),
+      sb.from('rep_numbers').select('*'),
     ]);
     logErr('hydrate leads', leadsR.error);
     logErr('hydrate call_logs', callsR.error);
     logErr('hydrate tasks', tasksR.error);
     logErr('hydrate notes', notesR.error);
     logErr('hydrate messages', msgsR.error);
+    // caller_numbers/rep_numbers 404 until numbers_setup.sql runs — tolerate silently.
+    this.callerNumbers = numsR.data || [];
+    this.repNumbers = {};
+    for (const r of (repNumsR.data || [])) {
+      (this.repNumbers[r.rep_id] ||= []).push(r.phone);
+    }
 
     this.leads.splice(0, this.leads.length, ...((leadsR.data) || []).map(leadFromRow));
     this.rebuildIndex();
@@ -472,6 +491,38 @@ const store = {
     if (!this.viewingAs) return;
     this.viewingAs = null;
     this.dirty();
+  },
+
+  // --- Caller ID (outbound number) ---
+  // Numbers this rep may call from: owners get the whole pool, everyone else
+  // only what's assigned in rep_numbers. Empty -> server picks the default.
+  myAllowedNumbers() {
+    if (!this.callerNumbers.length) return [];
+    if (this.isOwner()) return this.callerNumbers;
+    const mine = new Set(this.repNumbers[this.me] || []);
+    return this.callerNumbers.filter(n => mine.has(n.phone));
+  },
+  getCallerIdPref() {
+    try { return localStorage.getItem(`skylar-callerid:${this.me}`) || ''; } catch { return ''; }
+  },
+  setCallerIdPref(phone) {
+    try {
+      if (phone) localStorage.setItem(`skylar-callerid:${this.me}`, phone);
+      else localStorage.removeItem(`skylar-callerid:${this.me}`);
+    } catch {}
+    this.dirty();
+  },
+  // Owner-only (also enforced by RLS): replace a rep's number allowlist.
+  async setRepNumbers(repId, phones) {
+    if (!this.isOwner()) return;
+    this.repNumbers[repId] = [...phones];
+    this.dirty();
+    const { error: delErr } = await sb.from('rep_numbers').delete().eq('rep_id', repId);
+    logErr('rep_numbers delete', delErr);
+    if (phones.length) {
+      const { error } = await sb.from('rep_numbers').insert(phones.map(p => ({ rep_id: repId, phone: p })));
+      logErr('rep_numbers insert', error);
+    }
   },
 
   // Leads visible to the CURRENT view: owner (not viewing-as) sees all;

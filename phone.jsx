@@ -37,20 +37,23 @@ const PhonePage = ({ onCall, onSMS, onOpenLead }) => {
     }
   };
 
-  // resolve: if the dialed number matches a lead's phone, use that lead; else ad-hoc.
-  // Ad-hoc ids are stable per normalized phone so repeated dials share SMS history.
+  // resolve: if the dialed number matches a lead's phone, use that lead.
+  // Otherwise create a REAL lead on the spot, tagged section='Free Lead', so
+  // the recording, call log, notes and SMS thread all attach to something
+  // durable — rename/manage it later like any other lead. Re-dialing the same
+  // number matches the created lead instead of duplicating it.
   const resolveTarget = () => {
     const normalized = normalizePhone(dial);
     const match = store.visibleLeads().find(l => normalizePhone(l.phone) === normalized);
     if (match) return match;
-    return {
-      id: `adhoc-${normalized || dial}`,
-      fullName: pretty || 'Unknown',
-      initials: '?',
+    return store.addLead({
+      fullName: pretty || dial,
+      initials: '#',
       phone: dial,
-      business: 'Ad-hoc',
-      stage: 'new',
-    };
+      business: '',
+      section: 'Free Lead',
+      source: 'Phone dial',
+    });
   };
 
   const doCall = () => {
@@ -167,8 +170,10 @@ const PhonePage = ({ onCall, onSMS, onOpenLead }) => {
             <Icon name="message" size={14}/> Send SMS
           </button>
 
+          <CallerIdSelect style={{marginTop:12}}/>
+
           <div className="subtle" style={{fontSize:11,textAlign:'center',marginTop:12}}>
-            Type, paste, or tap · <span className="kbd">Enter</span> to call
+            Type, paste, or tap · <span className="kbd">Enter</span> to call · unknown numbers save as <b>Free Lead</b>
           </div>
         </div>
 
@@ -253,6 +258,36 @@ const PhoneRecentRow = ({ call: c, last, onDial, onOpenLead }) => {
   );
 };
 
+// "Calling from" picker — appears once numbers_setup.sql is live. Owners see
+// every number, reps only their assigned ones. The choice persists per
+// browser (localStorage) and voice.js re-validates it on every call, so a
+// rep can't dial out from a number they weren't given.
+const CallerIdSelect = ({ style, label = 'Calling from' }) => {
+  const allowed = store.myAllowedNumbers();
+  if (!allowed.length) return null;
+  const pref = store.getCallerIdPref();
+  const value = allowed.some(n => n.phone === pref) ? pref : '';
+  if (allowed.length === 1) {
+    return (
+      <div className="subtle" style={{fontSize:11.5,textAlign:'center', ...style}}>
+        📞 {label}: <span className="mono">{allowed[0].phone}</span>{allowed[0].label ? ` · ${allowed[0].label}` : ''}
+      </div>
+    );
+  }
+  return (
+    <div className="hstack gap-2" style={{alignItems:'center', ...style}}>
+      <span className="subtle" style={{fontSize:11.5,whiteSpace:'nowrap'}}>📞 {label}</span>
+      <select className="input" value={value} onChange={e => store.setCallerIdPref(e.target.value)}
+              style={{flex:1,fontSize:12,padding:'6px 8px'}}>
+        <option value="">Default</option>
+        {allowed.map(n => (
+          <option key={n.phone} value={n.phone}>{n.phone}{n.label ? ` — ${n.label}` : ''}</option>
+        ))}
+      </select>
+    </div>
+  );
+};
+
 // Twilio status pill — pings /api/token on mount and polls every 30s.
 const TwilioStatusPill = () => {
   const [state, setState] = React.useState('checking'); // checking | connected | unconfigured | error
@@ -293,4 +328,4 @@ const TwilioStatusPill = () => {
   );
 };
 
-Object.assign(window, { PhonePage, TwilioStatusPill, formatDialed });
+Object.assign(window, { PhonePage, TwilioStatusPill, CallerIdSelect, formatDialed });
