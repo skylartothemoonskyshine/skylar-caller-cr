@@ -61,12 +61,15 @@ function formatDurationSec(sec) {
 }
 function relativeString(d) {
   if (!(d instanceof Date)) return '—';
-  const diff = (d - new Date()) / (1000 * 60 * 60 * 24);
-  if (diff < -1) return `${Math.abs(Math.round(diff))}d ago`;
-  if (diff < 0) return 'Yesterday';
-  if (diff < 1) return 'Today';
-  if (diff < 2) return 'Tomorrow';
-  if (diff < 7) return `in ${Math.round(diff)}d`;
+  // Compare calendar days, not 24h windows — a call earlier today is "Today",
+  // not "Yesterday" (the old diff<0 math got this wrong for any past time).
+  const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const days = Math.round((startOfDay(d) - startOfDay(new Date())) / 86400000);
+  if (days === 0) return 'Today';
+  if (days === -1) return 'Yesterday';
+  if (days === 1) return 'Tomorrow';
+  if (days < 0) return `${-days}d ago`;
+  if (days < 7) return `in ${days}d`;
   return formatDate(d);
 }
 

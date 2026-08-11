@@ -1,7 +1,11 @@
 // POST /api/sms — send an SMS via Twilio.
-// Body: { to: "+15551234567", body: "message", leadId?: "L-xxxx" }
+// Body: { to: "+15551234567", body: "message", leadId?: "L-xxxx",
+//         identity?: "rep username", from?: "+E164 preferred caller ID" }
+// `from` is validated against the rep's allowlist (same rules as voice.js) —
+// an unassigned number silently falls back to the rep's default.
 
 const { client, env, isConfigured } = require('../lib/twilio');
+const { resolveCallerId } = require('../lib/caller-numbers');
 
 module.exports = async (req, res) => {
   try {
@@ -16,7 +20,7 @@ module.exports = async (req, res) => {
       res.end(JSON.stringify({ error: 'POST required' }));
       return;
     }
-    const { to, body, leadId, mediaUrl } = req.body || {};
+    const { to, body, leadId, mediaUrl, identity, from: preferred } = req.body || {};
     if (!to || (!body && !mediaUrl)) {
       res.statusCode = 400;
       res.setHeader('content-type', 'application/json');
@@ -24,8 +28,9 @@ module.exports = async (req, res) => {
       return;
     }
 
+    const { from } = await resolveCallerId(identity || '', preferred || '');
     const msgParams = {
-      from: env('TWILIO_FROM_NUMBER'),
+      from: from || env('TWILIO_FROM_NUMBER'),
       to,
       body: body || '',
     };

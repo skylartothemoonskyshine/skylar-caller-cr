@@ -1,43 +1,77 @@
 // Dialer panel (Twilio Voice WebRTC) + SMS composer + Quick-log modal
 
-// --- Twilio helper: fetch token, build Device ---
-// Returns { state: 'ready'|'unconfigured'|'error', device?, error? }
-async function initTwilioDevice(onError, onIncoming) {
-  if (!window.Twilio || !window.Twilio.Device) {
-    return { state: 'error', error: 'Twilio Voice SDK failed to load' };
-  }
-  try {
+// --- Twilio Voice: one shared Device for the whole app ---
+// Created once after sign-in and REGISTERED with Twilio, so inbound calls
+// ring even when no dialer panel is open (device.register() is required for
+// Device.on('incoming') to ever fire). The dialer reuses it for outbound
+// calls — never destroy it when a panel closes.
+const TwilioVoice = {
+  device: null,
+  identity: null,
+  onIncoming: null,   // set by App — receives the inbound Call object
+  onError: null,
+  _pending: null,
+
+  // Returns { state: 'ready'|'unconfigured'|'error', device?, error? }
+  ensure() {
     const identity = (window.store?.user?.email || '').split('@')[0];
-    const qs = identity ? `?identity=${encodeURIComponent(identity)}` : '';
-    const r = await fetch('/api/token' + qs);
-    if (r.status === 503) return { state: 'unconfigured' };
-    if (!r.ok) throw new Error(`Token endpoint ${r.status}`);
-    const { token } = await r.json();
-    const d = new window.Twilio.Device(token, {
-      logLevel: 1,
-      codecPreferences: ['opus', 'pcmu'],
-    });
-    d.on('error', (e) => { console.error('[device error]', e); onError && onError(e.message || String(e)); });
-    d.on('tokenWillExpire', async () => {
-      try {
-        const rr = await fetch('/api/token' + qs);
-        const { token: t } = await rr.json();
-        d.updateToken(t);
-      } catch (e) { console.error('token refresh failed', e); }
-    });
-    // Handle incoming calls
-    d.on('incoming', (call) => {
-      console.log('[incoming call]', call.parameters.From);
-      onIncoming && onIncoming(call);
-    });
-    return { state: 'ready', device: d };
-  } catch (e) {
-    console.error(e);
-    return { state: 'error', error: String(e.message || e) };
-  }
+    if (this.device && this.identity === identity) {
+      return Promise.resolve({ state: 'ready', device: this.device });
+    }
+    if (!this._pending) {
+      this._pending = this._init(identity).finally(() => { this._pending = null; });
+    }
+    return this._pending;
+  },
+
+  async _init(identity) {
+    if (!window.Twilio || !window.Twilio.Device) {
+      return { state: 'error', error: 'Twilio Voice SDK failed to load' };
+    }
+    try {
+      if (this.device) { try { this.device.destroy(); } catch {} this.device = null; }
+      this.identity = identity;
+      const qs = identity ? `?identity=${encodeURIComponent(identity)}` : '';
+      const r = await fetch('/api/token' + qs);
+      if (r.status === 503) return { state: 'unconfigured' };
+      if (!r.ok) throw new Error(`Token endpoint ${r.status}`);
+      const { token } = await r.json();
+      const d = new window.Twilio.Device(token, {
+        logLevel: 1,
+        codecPreferences: ['opus', 'pcmu'],
+      });
+      d.on('error', (e) => { console.error('[device error]', e); TwilioVoice.onError && TwilioVoice.onError(e.message || String(e)); });
+      d.on('tokenWillExpire', async () => {
+        try {
+          const rr = await fetch('/api/token' + qs);
+          const { token: t } = await rr.json();
+          d.updateToken(t);
+        } catch (e) { console.error('token refresh failed', e); }
+      });
+      d.on('incoming', (call) => {
+        console.log('[incoming call]', call.parameters.From);
+        if (TwilioVoice.onIncoming) TwilioVoice.onIncoming(call);
+        else call.reject(); // nobody listening (mid-logout) — send to voicemail
+      });
+      await d.register(); // <- without this Twilio never delivers inbound calls
+      this.device = d;
+      return { state: 'ready', device: d };
+    } catch (e) {
+      console.error(e);
+      this.device = null;
+      return { state: 'error', error: String(e.message || e) };
+    }
+  },
+};
+window.TwilioVoice = TwilioVoice;
+
+// Back-compat shim: the dialer panel grabs the shared device through this.
+async function initTwilioDevice(onError) {
+  TwilioVoice.onError = onError || null;
+  return TwilioVoice.ensure();
 }
 
-const DialerPanel = ({ lead, onClose, onLogged, onAdvance, onIncomingCall }) => {
+const DialerPanel = ({ lead, onClose, onLogged, onAdvance }) => {
   const [device, setDevice] = React.useState(null);
   const [call, setCall] = React.useState(null);
   const [callState, setCallState] = React.useState('preparing'); // preparing | dialing | connected | disconnected | failed | unconfigured
@@ -80,7 +114,7 @@ const DialerPanel = ({ lead, onClose, onLogged, onAdvance, onIncomingCall }) => 
     if (started.current) return;
     started.current = true;
     (async () => {
-      const result = await initTwilioDevice(setErr, onIncomingCall);
+      const result = await initTwilioDevice(setErr);
       if (result.state === 'unconfigured') { setCallState('unconfigured'); return; }
       if (result.state !== 'ready') { setCallState('failed'); setErr(result.error); return; }
       setDevice(result.device);
@@ -112,8 +146,8 @@ const DialerPanel = ({ lead, onClose, onLogged, onAdvance, onIncomingCall }) => 
     // eslint-disable-next-line
   }, []);
 
-  // Destroy device + hang up on unmount.
-  React.useEffect(() => () => { try { device?.destroy(); } catch {} }, [device]);
+  // Hang up on unmount. The Device itself is shared (TwilioVoice) and stays
+  // registered for inbound calls — do NOT destroy it here.
   React.useEffect(() => () => { try { call?.disconnect(); } catch {} }, [call]);
 
   // Re-render the timer once per second while we're on the call.
@@ -504,7 +538,13 @@ const SMSModal = ({ lead, onClose, onSent }) => {
         mediaUrl = await store.uploadMmsMedia(mediaFile);
         setUploading(false);
       }
-      const payload = { to: normalizePhone(lead.phone), body, leadId: lead.id };
+      const payload = {
+        to: normalizePhone(lead.phone), body, leadId: lead.id,
+        // Send from the rep's picked caller ID so texts and calls show the
+        // same number. sms.js validates it against the rep's allowlist.
+        identity: (window.store?.user?.email || '').split('@')[0],
+        from: window.store?.getCallerIdPref?.() || '',
+      };
       if (mediaUrl) payload.mediaUrl = [mediaUrl];
       const r = await fetch('/api/sms', {
         method: 'POST',

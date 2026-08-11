@@ -88,6 +88,18 @@ function App() {
     return () => window.removeEventListener('skylar-change', handler);
   }, []);
 
+  // Arm the shared Twilio device on sign-in so inbound calls ring anywhere
+  // in the app — not just while a dialer panel happens to be open.
+  React.useEffect(() => { window.TwilioVoice?.ensure(); }, []);
+  React.useEffect(() => {
+    if (!window.TwilioVoice) return;
+    window.TwilioVoice.onIncoming = (call) => {
+      if (!activeIncomingCall && !incomingCall) setIncomingCall(call);
+      else call.reject(); // already on a call — bounce straight to voicemail
+    };
+    return () => { window.TwilioVoice.onIncoming = null; };
+  }, [incomingCall, activeIncomingCall]);
+
   // Pull recordings from Twilio every 20s and attach to matching call logs by
   // callSid. Works on localhost AND on Vercel (no persistent connection needed).
   React.useEffect(() => {
@@ -337,12 +349,7 @@ function App() {
         lead={callingLead}
         onClose={() => setCallingLead(null)}
         onLogged={() => setToast('Call logged')}
-        onAdvance={advanceToNext}
-        onIncomingCall={(call) => {
-          if (!activeIncomingCall && !incomingCall) {
-            setIncomingCall(call);
-          }
-        }}/>}
+        onAdvance={advanceToNext}/>}
       {showLog && <QuickLogModal lead={showLog} onClose={() => setShowLog(null)} onSaved={() => { setShowLog(null); setToast('Call logged'); }}/>}
       {showPalette && <CommandPalette onClose={() => setShowPalette(false)} onNav={goTo} onOpenLead={openLead}/>}
       {showNewLead && <LeadFormModal onClose={() => setShowNewLead(false)} onCreated={(l) => { setToast(`Added ${l.fullName}`); openLead(l.id); }}/>}

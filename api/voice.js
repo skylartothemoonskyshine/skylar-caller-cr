@@ -3,7 +3,7 @@
 // TwiML that dials the destination number from our Twilio number and
 // enables dual-channel recording from answer.
 
-const { env } = require('../lib/twilio');
+const { env, requestBase } = require('../lib/twilio');
 const { resolveCallerId } = require('../lib/caller-numbers');
 
 module.exports = async (req, res) => {
@@ -27,8 +27,8 @@ module.exports = async (req, res) => {
     // picker). resolveCallerId validates it against their allowlist and
     // falls back to their default — a rep can never spoof an unassigned number.
     const { from } = await resolveCallerId(identity, params.callerId || '');
-    const publicUrl = env('PUBLIC_URL', false) || '';
-    const statusCallback = publicUrl ? `${publicUrl.replace(/\/$/, '')}/api/recording?leadId=${encodeURIComponent(leadId)}` : '';
+    const base = requestBase(req);
+    const statusCallback = base ? `${base}/api/recording?leadId=${encodeURIComponent(leadId)}` : '';
 
     // Dial with dual-channel recording (caller + callee on separate channels).
     const recordAttr = `record="record-from-answer-dual"`;
